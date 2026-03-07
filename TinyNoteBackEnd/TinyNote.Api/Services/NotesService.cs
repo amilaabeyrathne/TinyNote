@@ -1,3 +1,4 @@
+using AutoMapper;
 using TinyNote.Api.Data.Entities;
 using TinyNote.Api.DTOs;
 using TinyNote.Api.Exceptions;
@@ -8,26 +9,26 @@ namespace TinyNote.Api.Services;
 public class NotesService : INotesService
 {
     private readonly INoteRepository _noteRepository;
+    private readonly IMapper _mapper;
     private readonly ILogger<NotesService> _logger;
 
-    public NotesService(INoteRepository noteRepository, ILogger<NotesService> logger)
+    public NotesService(INoteRepository noteRepository, IMapper mapper, ILogger<NotesService> logger)
     {
         _noteRepository = noteRepository;
         _logger = logger;
+        _mapper = mapper;
     }
 
-    public async Task<Note> AddNoteAsync(CreateNoteRequest request, CancellationToken cancellationToken = default)
+    public async Task<NoteResponse> AddNoteAsync(CreateNoteRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Adding note for user {UserId}, title: {Title}", request.UserId, request.Title);
-
-        string summary = GetSummary(request);
 
         var note = new Note
         {
             UserId = request.UserId,
             Title = request.Title,
             Content = request.Content,
-            Summary = summary,
+            Summary = GetSummary(request.Content),
             CreatedAt = DateTimeOffset.UtcNow,
             UpdateAt = DateTimeOffset.UtcNow
         };
@@ -36,7 +37,26 @@ public class NotesService : INotesService
 
         _logger.LogInformation("Note added successfully, Id: {NoteId}", addedNote.Id);
 
-        return addedNote;
+        return _mapper.Map<NoteResponse>(addedNote);
+    }
+
+    public async Task<NoteResponse> UpdateNoteAsync(UpdateNoteRequest request, CancellationToken cancellationToken = default)
+    {
+        var existingNote = await _noteRepository.GetNoteAsync(request.Id, cancellationToken);
+        if (existingNote == null)
+        {
+            _logger.LogWarning("Failed to update note with Id {NoteId}. Note not found.", request.Id);
+            throw new ItemNotFoundException(request.Id);
+        }
+        existingNote.Title = request.Title;
+        existingNote.Content = request.Content;
+        existingNote.Summary = GetSummary(request.Content);
+        existingNote.UpdateAt = DateTimeOffset.UtcNow;
+        var updatedNote = await _noteRepository.UpdateNoteAsync(existingNote, cancellationToken);
+
+        _logger.LogInformation("Note with Id {NoteId} updated successfully", request.Id);
+
+        return _mapper.Map<NoteResponse>(updatedNote);
     }
 
     public async Task<Note?> GetNoteAsync(Guid id, CancellationToken cancellationToken = default)
@@ -62,8 +82,8 @@ public class NotesService : INotesService
             throw new ItemNotFoundException(id);
         }
     }
-    private static string GetSummary(CreateNoteRequest request)
+    private static string GetSummary(string content)
     {
-        return request.Content.Length > 50 ? string.Concat(request.Content.AsSpan(0, 50), "...") : request.Content;
+        return content.Length > 50 ? string.Concat(content.AsSpan(0, 50), "...") : content;
     }
 }

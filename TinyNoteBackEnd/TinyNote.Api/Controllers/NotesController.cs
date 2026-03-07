@@ -19,11 +19,11 @@ namespace TinyNote.Api.Controllers
         }
 
         [HttpPost]
-        [ProducesResponseType(typeof(CreateNoteResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
         public async Task<IActionResult> AddNote([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
         {
-            var note = await _notesService.AddNoteAsync(request, cancellationToken);
-            return Ok(_mapper.Map<CreateNoteResponse>(note));
+            var response = await _notesService.AddNoteAsync(request, cancellationToken);
+            return Ok(response);
         }
 
         [HttpGet("{id:guid}")]
@@ -47,14 +47,19 @@ namespace TinyNote.Api.Controllers
 
         [HttpDelete("{id:guid}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteNote(Guid id, CancellationToken cancellationToken = default)
         {
             var isDeleted = await _notesService.DeleteNoteAsync(id, cancellationToken);
-            if (!isDeleted)
-                return NotFound();
             return NoContent();
         }
 
+        [HttpPut]
+        [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateNote([FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
+        {
+            var response = await _notesService.UpdateNoteAsync(request, cancellationToken);
+            return Ok(response);
+        }
     }
 }
