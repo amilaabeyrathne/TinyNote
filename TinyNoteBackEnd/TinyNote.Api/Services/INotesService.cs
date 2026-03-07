@@ -1,0 +1,11 @@
+using TinyNote.Api.Data.Entities;
+using TinyNote.Api.DTOs;
+
+namespace TinyNote.Api.Services;
+
+public interface INotesService
+{
+    Task<Note> AddNoteAsync(CreateNoteRequest request, CancellationToken cancellationToken = default);
+    Task<Note?> GetNoteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default);
+}
