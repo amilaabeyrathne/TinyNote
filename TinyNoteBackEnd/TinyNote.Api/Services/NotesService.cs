@@ -1,5 +1,6 @@
 using TinyNote.Api.Data.Entities;
 using TinyNote.Api.DTOs;
+using TinyNote.Api.Exceptions;
 using TinyNote.Api.Repository;
 
 namespace TinyNote.Api.Services;
@@ -50,9 +51,17 @@ public class NotesService : INotesService
 
     public async Task<bool> DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _noteRepository.DeleteNoteAsync(id, cancellationToken);
+        if (await _noteRepository.DeleteNoteAsync(id, cancellationToken))
+        {
+            _logger.LogInformation("Note with Id {NoteId} deleted successfully", id);
+            return true;
+        }
+        else
+        {
+            _logger.LogWarning("Failed to delete note with Id {NoteId}. Note not found.", id);
+            throw new ItemNotFoundException(id);
+        }
     }
-
     private static string GetSummary(CreateNoteRequest request)
     {
         return request.Content.Length > 50 ? string.Concat(request.Content.AsSpan(0, 50), "...") : request.Content;

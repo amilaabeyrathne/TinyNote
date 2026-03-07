@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using TinyNote.Api.Exceptions;
 
 namespace TinyNote.Api.Middleware
 {
@@ -33,6 +34,7 @@ namespace TinyNote.Api.Middleware
             {
                 DbUpdateException => StatusCodes.Status503ServiceUnavailable,
                 NpgsqlException => StatusCodes.Status503ServiceUnavailable,
+                ItemNotFoundException => StatusCodes.Status404NotFound,
                 _ => StatusCodes.Status500InternalServerError
             };
 

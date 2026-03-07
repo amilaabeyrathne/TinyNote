@@ -44,5 +44,17 @@ namespace TinyNote.Api.Controllers
             var notes = await _notesService.GetNotesAsync(userId, cancellationToken);
             return Ok(_mapper.Map<List<NoteResponse>>(notes));
         }
+
+        [HttpDelete("{id:guid}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteNote(Guid id, CancellationToken cancellationToken = default)
+        {
+            var isDeleted = await _notesService.DeleteNoteAsync(id, cancellationToken);
+            if (!isDeleted)
+                return NotFound();
+            return NoContent();
+        }
+
     }
 }
