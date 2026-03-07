@@ -26,13 +26,15 @@ export default function Notes() {
   const { data: notes = [], isLoading, error } = useGetNotesQuery(USER_ID);
   const [deleteNote] = useDeleteNoteMutation();
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const isOpenFromNav = (location.state as { openAddModal?: boolean })?.openAddModal;
-  const modalOpen = addModalOpen || !!isOpenFromNav;
+  const modalOpen = addModalOpen || !!editingNoteId || !!isOpenFromNav;
 
-  const handleCloseAddModal = () => {
+  const handleCloseNoteModal = () => {
     setAddModalOpen(false);
+    setEditingNoteId(null);
     if (isOpenFromNav) navigate('/', { replace: true, state: {} });
   };
 
@@ -51,15 +53,19 @@ export default function Notes() {
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => setAddModalOpen(true)}
+          onClick={() => {
+            setEditingNoteId(null);
+            setAddModalOpen(true);
+          }}
         >
           Add Note
         </Button>
       </Box>
       <AddNote
         open={modalOpen}
-        onClose={handleCloseAddModal}
+        onClose={handleCloseNoteModal}
         userId={USER_ID}
+        noteID={editingNoteId ?? undefined}
       />
       <TableContainer component={Paper}>
       <Table sx={{ minWidth: 900 }} aria-label="notes table">
@@ -77,13 +83,16 @@ export default function Notes() {
               <TableCell component="th" scope="row">
                 {note.title}
               </TableCell>
-              <TableCell>{note.summary ?? note.content}</TableCell>
+              <TableCell>{note.summary}</TableCell>
               <TableCell align="right">{new Date(note.createdAt).toLocaleDateString()}</TableCell>
               <TableCell align="right">
                 <IconButton
                   color="primary"
                   size="small"
-                  onClick={() => {}}
+                  onClick={() => {
+                    setEditingNoteId(note.id);
+                    setAddModalOpen(true);
+                  }}
                   aria-label="edit"
                 >
                   <EditIcon />

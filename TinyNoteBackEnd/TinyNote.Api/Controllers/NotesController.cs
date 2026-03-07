@@ -34,7 +34,7 @@ namespace TinyNote.Api.Controllers
             var note = await _notesService.GetNoteAsync(id, cancellationToken);
             if (note is null)
                 return NotFound();
-            return Ok(_mapper.Map<NoteResponse>(note));
+            return Ok(note);
         }
 
         [HttpGet]
@@ -42,7 +42,7 @@ namespace TinyNote.Api.Controllers
         public async Task<IActionResult> GetNotes([FromQuery] Guid userId, CancellationToken cancellationToken = default)
         {
             var notes = await _notesService.GetNotesAsync(userId, cancellationToken);
-            return Ok(_mapper.Map<List<NoteResponse>>(notes));
+            return Ok(notes);
         }
 
         [HttpDelete("{id:guid}")]

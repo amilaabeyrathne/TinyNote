@@ -1,5 +1,5 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import type { Note, CreateNoteRequest } from './types';
+import type { Note, CreateNoteRequest, UpdateNoteRequest } from './types';
 
 export const backendApi = createApi({
   reducerPath: 'backendApi',
@@ -32,6 +32,17 @@ export const backendApi = createApi({
         { type: 'Note', id: `LIST-${userId}` },
       ],
     }),
+    updateNote: builder.mutation<Note, UpdateNoteRequest>({
+      query: (body) => ({
+        url: 'notes',
+        method: 'PUT',
+        body,
+      }),
+      invalidatesTags: (_result, _error, { id, userId }) => [
+        { type: 'Note', id },
+        { type: 'Note', id: `LIST-${userId}` },
+      ],
+    }),
     deleteNote: builder.mutation<void, { id: string; userId: string }>({
       query: ({ id }) => ({
         url: `notes/${id}`,
@@ -49,5 +60,6 @@ export const {
   useGetNotesQuery,
   useGetNoteQuery,
   useAddNoteMutation,
+  useUpdateNoteMutation,
   useDeleteNoteMutation,
 } = backendApi;

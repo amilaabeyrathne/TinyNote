@@ -59,14 +59,16 @@ public class NotesService : INotesService
         return _mapper.Map<NoteResponse>(updatedNote);
     }
 
-    public async Task<Note?> GetNoteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<NoteResponse?> GetNoteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _noteRepository.GetNoteAsync(id, cancellationToken);
+        var result = await _noteRepository.GetNoteAsync(id, cancellationToken);
+        return result is null ? null : _mapper.Map<NoteResponse>(result);
     }
 
-    public async Task<List<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<List<NoteResponse>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        return await _noteRepository.GetNotesAsync(userId, cancellationToken);
+        var result = await _noteRepository.GetNotesAsync(userId, cancellationToken);
+        return _mapper.Map<List<NoteResponse>>(result);
     }
 
     public async Task<bool> DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default)

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import {
   Button,
@@ -8,7 +8,7 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
-import { useAddNoteMutation } from '../../services/backendApi';
+import { useAddNoteMutation, useGetNoteQuery, useUpdateNoteMutation } from '../../services/backendApi';
 
 const TITLE_MAX_LENGTH = 100;
 const CONTENT_MAX_LENGTH = 2000;
@@ -17,19 +17,35 @@ interface AddNoteProps {
   open: boolean;
   onClose: () => void;
   userId: "d44dc55f-e08c-4db2-a918-3093f1e11848";
+  noteID?: string;
 }
 
-export default function AddNote({ open, onClose, userId }: AddNoteProps) {
+export default function AddNote({ open, onClose, userId, noteID }: AddNoteProps) {
+  const { data: note} = useGetNoteQuery(noteID!, {
+    skip: !open || !noteID,
+  });
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [errors, setErrors] = useState<{ title?: string; content?: string }>({});
   const [addNote, { isLoading }] = useAddNoteMutation();
+  const [updateNote, { isLoading: isUpdateLoading }] = useUpdateNoteMutation();
+
+  useEffect(() => {
+    if (note) {
+      setTitle(note.title);
+      setContent(note.content);
+    } else if (!noteID) {
+      setTitle('');
+      setContent('');
+    }
+  }, [note, noteID]);
 
   const handleClose = () => {
     setTitle('');
     setContent('');
     setErrors({});
     onClose();
+    noteID = undefined;
   };
 
   const validate = (): boolean => {
@@ -61,22 +77,31 @@ export default function AddNote({ open, onClose, userId }: AddNoteProps) {
     const trimmedContent = content.trim();
 
     try {
-      await addNote({
-        userId,
-        title: trimmedTitle,
-        content: trimmedContent,
-      }).unwrap();
-      toast.success('Note added successfully');
-      handleClose();
+        if(noteID){
+            await updateNote({
+                id: noteID,
+                userId,
+                title: trimmedTitle,
+                content: trimmedContent,
+            }).unwrap();
+            toast.success('Note updated successfully');
+        } else {
+            await addNote({
+                userId,
+                title: '',
+                content: '',
+            }).unwrap();
+            toast.success('Note added successfully');
+        }
+        handleClose();
     } catch {
-      toast.error('Failed to add note');
+        toast.error('Failed to add note');
     }
   };
-
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <form onSubmit={handleSubmit}>
-        <DialogTitle>Add a Note</DialogTitle>
+        <DialogTitle> {noteID ? ' Edit Note' : 'Add a Note'}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <TextField
             autoFocus
@@ -110,8 +135,9 @@ export default function AddNote({ open, onClose, userId }: AddNoteProps) {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={handleClose}>Cancel</Button>
-          <Button type="submit" variant="contained" disabled={isLoading}>
-            {isLoading ? 'Adding...' : 'Add Note'}
+          <Button type="submit" variant="contained" disabled={isLoading || isUpdateLoading}>
+            {isLoading || isUpdateLoading ? 'Loading...' : noteID ? 'Update Note' : 'Add Note'}
+            
           </Button>
         </DialogActions>
       </form>
