@@ -31,12 +31,12 @@ export default function AddNote({ open, onClose, userId, noteID }: AddNoteProps)
   const [updateNote, { isLoading: isUpdateLoading }] = useUpdateNoteMutation();
 
   useEffect(() => {
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-    } else if (!noteID) {
+    if (!noteID) {
       setTitle('');
       setContent('');
+    } else if (note) {
+      setTitle(note.title);
+      setContent(note.content);
     }
   }, [note, noteID]);
 
@@ -45,7 +45,6 @@ export default function AddNote({ open, onClose, userId, noteID }: AddNoteProps)
     setContent('');
     setErrors({});
     onClose();
-    noteID = undefined;
   };
 
   const validate = (): boolean => {
@@ -88,8 +87,8 @@ export default function AddNote({ open, onClose, userId, noteID }: AddNoteProps)
         } else {
             await addNote({
                 userId,
-                title: '',
-                content: '',
+                title: trimmedTitle,
+                content: trimmedContent,
             }).unwrap();
             toast.success('Note added successfully');
         }
