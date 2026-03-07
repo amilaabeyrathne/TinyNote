@@ -1,0 +1,42 @@
+import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import type { Note, CreateNoteRequest } from './types';
+
+export const backendApi = createApi({
+  reducerPath: 'backendApi',
+  baseQuery: fetchBaseQuery({
+    baseUrl: '/api',
+  }),
+  tagTypes: ['Note'],
+  endpoints: (builder) => ({
+    getNotes: builder.query<Note[], string>({
+      query: (userId) => ({ url: 'notes', params: { userId } }),
+      providesTags: (result, _error, userId) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'Note' as const, id })),
+              { type: 'Note', id: `LIST-${userId}` },
+            ]
+          : [{ type: 'Note', id: `LIST-${userId}` }],
+    }),
+    getNote: builder.query<Note, string>({
+      query: (id) => `notes/${id}`,
+      providesTags: (_result, _error, id) => [{ type: 'Note', id }],
+    }),
+    addNote: builder.mutation<Note, CreateNoteRequest>({
+      query: (body) => ({
+        url: 'notes',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_result, _error, { userId }) => [
+        { type: 'Note', id: `LIST-${userId}` },
+      ],
+    }),
+  }),
+});
+
+export const {
+  useGetNotesQuery,
+  useGetNoteQuery,
+  useAddNoteMutation,
+} = backendApi;

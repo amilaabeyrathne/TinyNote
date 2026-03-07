@@ -23,9 +23,15 @@ x86/
 # NuGet
 *.nupkg
 *.snupkg
+**/packages/
 packages/
 project.lock.json
 project.fragment.lock.json
+**/project.assets.json
+
+# Node / Frontend
+node_modules/
+**/node_modules/
 
 # Rider
 .idea/

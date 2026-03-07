@@ -24,7 +24,9 @@ public class NotesService : INotesService
             UserId = request.UserId,
             Title = request.Title,
             Content = request.Content,
-            Summary = request.Summary
+            Summary = request.Summary,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdateAt = DateTimeOffset.UtcNow
         };
 
         var addedNote = await _noteRepository.AddNoteAsync(note, cancellationToken);

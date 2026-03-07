@@ -16,8 +16,6 @@ public class NoteRepository : INoteRepository
     public async Task<Note> AddNoteAsync(Note note, CancellationToken cancellationToken = default)
     {
         note.Id = Guid.NewGuid();
-        note.CreatedAt = DateTimeOffset.UtcNow;
-        note.UpdateAt = DateTimeOffset.UtcNow;
 
         await _context.Notes.AddAsync(note, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
@@ -56,7 +54,7 @@ public class NoteRepository : INoteRepository
         return await _context.Notes.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<List<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await _context.Notes
             .AsNoTracking()
