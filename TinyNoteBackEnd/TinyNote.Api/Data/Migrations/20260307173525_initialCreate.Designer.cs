@@ -12,7 +12,7 @@ using TinyNote.Api.Data;
 namespace TinyNote.Api.Data.Migrations
 {
     [DbContext(typeof(NotesDbContext))]
-    [Migration("20260307112918_initialCreate")]
+    [Migration("20260307173525_initialCreate")]
     partial class initialCreate
     {
         /// <inheritdoc />
@@ -33,7 +33,8 @@ namespace TinyNote.Api.Data.Migrations
 
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -44,8 +45,8 @@ namespace TinyNote.Api.Data.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTimeOffset>("UpdateAt")
                         .HasColumnType("timestamp with time zone");

@@ -19,7 +19,7 @@ import {
 } from '@mui/material';
 import { useDeleteNoteMutation, useGetNotesQuery } from '../../services/backendApi';
 
-const USER_ID = 'c11d7689-a680-4cd7-be95-5dfd99653dd6';
+const USER_ID = 'd44dc55f-e08c-4db2-a918-3093f1e11848';
 
 export default function Notes() {
   const { data: notes = [], isLoading, error } = useGetNotesQuery(USER_ID);
