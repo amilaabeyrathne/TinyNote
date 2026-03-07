@@ -60,6 +60,13 @@ public class NoteRepository : INoteRepository
             .AsNoTracking()
             .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.UpdateAt)
+            .Select(n => new Note
+             {
+                 Id = n.Id,
+                 Title = n.Title,
+                 Summary = n.Summary,
+                 CreatedAt = n.CreatedAt
+             })
             .ToListAsync(cancellationToken);
     }
 }

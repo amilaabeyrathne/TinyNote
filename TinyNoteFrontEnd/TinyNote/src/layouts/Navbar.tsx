@@ -19,20 +19,7 @@ export default function Navbar() {
             >
               TinyNote
             </Typography>
-            <Typography 
-              variant="h6" 
-              component={Link} 
-              to="/reservation" 
-              sx={{ 
-                textDecoration: 'none', 
-                color: 'inherit', 
-                '&:hover': { 
-                  opacity: 0.8 
-                } 
-              }}
-            >
-              Add a Note
-            </Typography>  
+
         </Toolbar>
     </AppBar>
     );

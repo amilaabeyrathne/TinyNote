@@ -20,8 +20,8 @@ namespace TinyNote.Api.Data
                 entity.ToTable("notes");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.UserId).IsRequired();
-                entity.Property(e => e.Title).IsRequired().HasMaxLength(200);
-                entity.Property(e => e.Content).IsRequired();
+                entity.Property(e => e.Title).IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Content).HasMaxLength(2000).IsRequired();
                 entity.Property(e => e.Summary).HasMaxLength(500).IsRequired(false);
                 entity.Property(e => e.CreatedAt).IsRequired();
                 entity.Property(e => e.UpdateAt).IsRequired();

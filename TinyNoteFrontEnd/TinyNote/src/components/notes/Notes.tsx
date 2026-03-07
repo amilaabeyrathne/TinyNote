@@ -1,6 +1,13 @@
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import AddNote from './AddNote';
 import {
   Box,
+  Button,
   CircularProgress,
+  IconButton,
   Paper,
   Table,
   TableBody,
@@ -10,10 +17,23 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import { useGetNotesQuery } from '../../services/backendApi';
+import { useDeleteNoteMutation, useGetNotesQuery } from '../../services/backendApi';
+
+const USER_ID = 'c11d7689-a680-4cd7-be95-5dfd99653dd6';
 
 export default function Notes() {
-  const { data: notes = [], isLoading, error } = useGetNotesQuery('c11d7689-a680-4cd7-be95-5dfd99653dd6');
+  const { data: notes = [], isLoading, error } = useGetNotesQuery(USER_ID);
+  const [deleteNote] = useDeleteNoteMutation();
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isOpenFromNav = (location.state as { openAddModal?: boolean })?.openAddModal;
+  const modalOpen = addModalOpen || !!isOpenFromNav;
+
+  const handleCloseAddModal = () => {
+    setAddModalOpen(false);
+    if (isOpenFromNav) navigate('/', { replace: true, state: {} });
+  };
 
   if (isLoading) {
     return (
@@ -23,17 +43,31 @@ export default function Notes() {
     );
   }
   if (error) return <Typography color="error">Failed to load notes</Typography>;
-  if (notes.length === 0) return <Typography>No notes yet</Typography>;
 
   return (
-    <TableContainer component={Paper}>
+    <>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setAddModalOpen(true)}
+        >
+          Add Note
+        </Button>
+      </Box>
+      <AddNote
+        open={modalOpen}
+        onClose={handleCloseAddModal}
+        userId={USER_ID}
+      />
+      <TableContainer component={Paper}>
       <Table sx={{ minWidth: 900 }} aria-label="notes table">
         <TableHead>
           <TableRow>
             <TableCell>Title</TableCell>
             <TableCell>Content</TableCell>
             <TableCell align="right">Created</TableCell>
-            <TableCell align="right">Updated</TableCell>
+            <TableCell align="right">Actions</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -44,11 +78,25 @@ export default function Notes() {
               </TableCell>
               <TableCell>{note.summary ?? note.content}</TableCell>
               <TableCell align="right">{new Date(note.createdAt).toLocaleDateString()}</TableCell>
-              <TableCell align="right">{new Date(note.updateAt).toLocaleDateString()}</TableCell>
+              <TableCell align="right">
+                <IconButton
+                  color="error"
+                  size="small"
+                  onClick={() => {
+                  if (window.confirm('Are you sure?')) {
+                    deleteNote({ id: note.id, userId: USER_ID });
+                  }
+                }}
+                  aria-label="delete"
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
-    </TableContainer>
+      </TableContainer>
+    </>
   );
 }

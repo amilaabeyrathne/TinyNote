@@ -32,6 +32,16 @@ export const backendApi = createApi({
         { type: 'Note', id: `LIST-${userId}` },
       ],
     }),
+    deleteNote: builder.mutation<void, { id: string; userId: string }>({
+      query: ({ id }) => ({
+        url: `notes/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (_result, _error, { id, userId }) => [
+        { type: 'Note', id },
+        { type: 'Note', id: `LIST-${userId}` },
+      ],
+    }),
   }),
 });
 
@@ -39,4 +49,5 @@ export const {
   useGetNotesQuery,
   useGetNoteQuery,
   useAddNoteMutation,
+  useDeleteNoteMutation,
 } = backendApi;

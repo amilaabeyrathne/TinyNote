@@ -19,12 +19,14 @@ public class NotesService : INotesService
     {
         _logger.LogInformation("Adding note for user {UserId}, title: {Title}", request.UserId, request.Title);
 
+        var summary = request.Content.Length > 50? string.Concat(request.Content.AsSpan(0, 50), "...") : request.Content;
+
         var note = new Note
         {
             UserId = request.UserId,
             Title = request.Title,
             Content = request.Content,
-            Summary = request.Summary,
+            Summary = summary,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdateAt = DateTimeOffset.UtcNow
         };
@@ -41,8 +43,13 @@ public class NotesService : INotesService
         return await _noteRepository.GetNoteAsync(id, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<List<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await _noteRepository.GetNotesAsync(userId, cancellationToken);
+    }
+
+    public async Task<bool> DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return await _noteRepository.DeleteNoteAsync(id, cancellationToken);
     }
 }
