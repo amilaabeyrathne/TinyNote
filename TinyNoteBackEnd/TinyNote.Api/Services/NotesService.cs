@@ -19,7 +19,7 @@ public class NotesService : INotesService
     {
         _logger.LogInformation("Adding note for user {UserId}, title: {Title}", request.UserId, request.Title);
 
-        var summary = request.Content.Length > 50? string.Concat(request.Content.AsSpan(0, 50), "...") : request.Content;
+        string summary = GetSummary(request);
 
         var note = new Note
         {
@@ -51,5 +51,10 @@ public class NotesService : INotesService
     public async Task<bool> DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _noteRepository.DeleteNoteAsync(id, cancellationToken);
+    }
+
+    private static string GetSummary(CreateNoteRequest request)
+    {
+        return request.Content.Length > 50 ? string.Concat(request.Content.AsSpan(0, 50), "...") : request.Content;
     }
 }

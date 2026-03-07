@@ -23,15 +23,15 @@ public class NoteRepository : INoteRepository
         return note;
     }
 
-    public async Task<Note?> UpdateNoteAsync(Guid id, string title, string content, string? summary, CancellationToken cancellationToken = default)
+    public async Task<Note?> UpdateNoteAsync(Note note, CancellationToken cancellationToken = default)
     {
-        var note = await _context.Notes.FindAsync([id], cancellationToken);
+        var noteToUpdate = await _context.Notes.FindAsync([note.Id], cancellationToken);
         if (note is null)
             return null;
 
-        note.Title = title;
-        note.Content = content;
-        note.Summary = summary;
+        note.Title = note.Title;
+        note.Content = note.Content;
+        note.Summary = note.Summary;
         note.UpdateAt = DateTimeOffset.UtcNow;
 
         await _context.SaveChangesAsync(cancellationToken);

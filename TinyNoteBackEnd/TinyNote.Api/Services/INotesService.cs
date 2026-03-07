@@ -8,5 +8,4 @@ public interface INotesService
     Task<Note> AddNoteAsync(CreateNoteRequest request, CancellationToken cancellationToken = default);
     Task<Note?> GetNoteAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default);
-    Task<bool> DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default);
 }

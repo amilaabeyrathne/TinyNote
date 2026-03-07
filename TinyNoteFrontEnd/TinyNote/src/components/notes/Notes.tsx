@@ -1,4 +1,5 @@
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -80,13 +81,21 @@ export default function Notes() {
               <TableCell align="right">{new Date(note.createdAt).toLocaleDateString()}</TableCell>
               <TableCell align="right">
                 <IconButton
+                  color="primary"
+                  size="small"
+                  onClick={() => {}}
+                  aria-label="edit"
+                >
+                  <EditIcon />
+                </IconButton>
+                <IconButton
                   color="error"
                   size="small"
                   onClick={() => {
-                  if (window.confirm('Are you sure?')) {
-                    deleteNote({ id: note.id, userId: USER_ID });
-                  }
-                }}
+                    if (window.confirm('Are you sure?')) {
+                      deleteNote({ id: note.id, userId: USER_ID });
+                    }
+                  }}
                   aria-label="delete"
                 >
                   <DeleteIcon />
