@@ -54,19 +54,49 @@ public class NoteRepository : INoteRepository
         return await _context.Notes.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
     }
 
-    public async Task<List<Note>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<List<Note>> GetNotesAsync(Guid userId, string? search, string sortBy, string sortOrder, CancellationToken cancellationToken = default)
     {
-        return await _context.Notes
+        var searchLower = search?.Trim().ToLowerInvariant();
+
+        var dbQuery = _context.Notes
             .AsNoTracking()
-            .Where(n => n.UserId == userId)
-            .OrderByDescending(n => n.UpdateAt)
+            .Where(n => n.UserId == userId);
+
+        if (!string.IsNullOrEmpty(searchLower))
+        {
+            dbQuery = dbQuery.Where(n =>
+                n.Title.ToLower().Contains(searchLower) ||
+                n.Content.ToLower().Contains(searchLower) ||
+                (n.Summary != null && n.Summary.ToLower().Contains(searchLower)));
+        }
+
+        var sortByLower = sortBy?.ToLowerInvariant();
+        var isAscending = sortOrder?.ToLowerInvariant() == "asc";
+
+        switch ((sortByLower, isAscending))
+        {
+            case ("title", true):
+                dbQuery = dbQuery.OrderBy(n => n.Title);
+                break;
+            case ("title", false):
+                dbQuery = dbQuery.OrderByDescending(n => n.Title);
+                break;
+            case (_, true):
+                dbQuery = dbQuery.OrderBy(n => n.CreatedAt);
+                break;
+            default:
+                dbQuery = dbQuery.OrderByDescending(n => n.CreatedAt);
+                break;
+        }
+
+        return await dbQuery
             .Select(n => new Note
-             {
-                 Id = n.Id,
-                 Title = n.Title,
-                 Summary = n.Summary,
-                 CreatedAt = n.CreatedAt
-             })
+            {
+                Id = n.Id,
+                Title = n.Title,
+                Summary = n.Summary,
+                CreatedAt = n.CreatedAt
+            })
             .ToListAsync(cancellationToken);
     }
 }

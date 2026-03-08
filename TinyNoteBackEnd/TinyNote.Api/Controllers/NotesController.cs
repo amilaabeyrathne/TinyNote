@@ -39,9 +39,10 @@ namespace TinyNote.Api.Controllers
 
         [HttpGet]
         [ProducesResponseType(typeof(List<NoteResponse>), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetNotes([FromQuery] Guid userId, CancellationToken cancellationToken = default)
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> GetNotes([FromQuery] GetNotesQuery query, CancellationToken cancellationToken = default)
         {
-            var notes = await _notesService.GetNotesAsync(userId, cancellationToken);
+            var notes = await _notesService.GetNotesAsync(query, cancellationToken);
             return Ok(notes);
         }
 

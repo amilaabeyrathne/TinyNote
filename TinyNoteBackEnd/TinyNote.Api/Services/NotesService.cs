@@ -65,9 +65,14 @@ public class NotesService : INotesService
         return result is null ? null : _mapper.Map<NoteResponse>(result);
     }
 
-    public async Task<List<NoteResponse>> GetNotesAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<List<NoteResponse>> GetNotesAsync(GetNotesQuery query, CancellationToken cancellationToken = default)
     {
-        var result = await _noteRepository.GetNotesAsync(userId, cancellationToken);
+        var result = await _noteRepository.GetNotesAsync(
+            query.UserId,
+            query.Search,
+            query.SortBy,
+            query.SortOrder,
+            cancellationToken);
         return _mapper.Map<List<NoteResponse>>(result);
     }
 
