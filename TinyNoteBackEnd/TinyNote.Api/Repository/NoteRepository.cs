@@ -56,18 +56,17 @@ public class NoteRepository : INoteRepository
 
     public async Task<List<Note>> GetNotesAsync(Guid userId, string? search, string sortBy, string sortOrder, CancellationToken cancellationToken = default)
     {
-        var searchLower = search?.Trim().ToLowerInvariant();
-
         var dbQuery = _context.Notes
             .AsNoTracking()
             .Where(n => n.UserId == userId);
 
-        if (!string.IsNullOrEmpty(searchLower))
+        if (!string.IsNullOrEmpty(search))
         {
             dbQuery = dbQuery.Where(n =>
-                n.Title.ToLower().Contains(searchLower) ||
-                n.Content.ToLower().Contains(searchLower) ||
-                (n.Summary != null && n.Summary.ToLower().Contains(searchLower)));
+                    EF.Functions.ILike(n.Title, $"%{search}%") ||
+                    EF.Functions.ILike(n.Content, $"%{search}%") ||
+                    (n.Summary != null && EF.Functions.ILike(n.Summary, $"%{search}%"))
+                );
         }
 
         var sortByLower = sortBy?.ToLowerInvariant();
@@ -82,10 +81,10 @@ public class NoteRepository : INoteRepository
                 dbQuery = dbQuery.OrderByDescending(n => n.Title);
                 break;
             case (_, true):
-                dbQuery = dbQuery.OrderBy(n => n.CreatedAt);
+                dbQuery = dbQuery.OrderBy(n => n.UpdateAt);
                 break;
             default:
-                dbQuery = dbQuery.OrderByDescending(n => n.CreatedAt);
+                dbQuery = dbQuery.OrderByDescending(n => n.UpdateAt);
                 break;
         }
 

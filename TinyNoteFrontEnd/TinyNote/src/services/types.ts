@@ -20,3 +20,10 @@ export interface UpdateNoteRequest {
   content: string;
   summary?: string;
 }
+
+export interface GetNotesParams {
+  userId: string;
+  search?: string;
+  sortBy?: 'title' | 'createdAt';
+  sortOrder?: 'asc' | 'desc';
+}
