@@ -7,7 +7,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5072',
+        // Dev-only: used when running "npm run dev". Not used in Docker/ECS - nginx and ALB handle /api there.
+        target: 'http://localhost:8082',  // Docker API port; use 5072 if running API with dotnet run
         changeOrigin: true,
         secure: false,
       },

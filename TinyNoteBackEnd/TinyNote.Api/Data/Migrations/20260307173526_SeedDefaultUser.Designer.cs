@@ -12,7 +12,7 @@ using TinyNote.Api.Data;
 namespace TinyNote.Api.Data.Migrations
 {
     [DbContext(typeof(NotesDbContext))]
-    [Migration("20250308120000_SeedDefaultUser")]
+    [Migration("20260307173526_SeedDefaultUser")]
     partial class SeedDefaultUser
     {
         /// <inheritdoc />

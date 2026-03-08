@@ -5,6 +5,7 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECS;
 using Amazon.CDK.AWS.ECS.Patterns;
+using Amazon.CDK.AWS.Logs;
 using Amazon.CDK.AWS.Ecr.Assets;
 using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.RDS;
@@ -83,6 +84,7 @@ namespace Cdk
             {
                 Directory = backendRoot,
                 File = "TinyNote.Api/Dockerfile",
+                Platform = Platform_.LINUX_AMD64,  // Use strongly-typed CDK Platform enum, not string
             });
 
             FrontendImage = new DockerImageAsset(this, "FrontendImage", new DockerImageAssetProps
@@ -90,14 +92,22 @@ namespace Cdk
                 Directory = frontendDir,
             });
 
-            // Connection string from Database resource (not hardcoded endpoint)
-            var connectionString = $"Host={Database.InstanceEndpoint.Hostname};Port={Database.InstanceEndpoint.Port};Database=tinynote;Username=postgres;Password=postgres";
+            // Connection string from Database resource (port 5432 = PostgreSQL standard)
+            var connectionString = $"Host={Database.InstanceEndpoint.Hostname};Port=5432;Database=tinynote;Username=postgres;Password=postgres";
 
             // ECS Cluster
             var cluster = new Cluster(this, "TinyNoteCluster", new ClusterProps
             {
                 Vpc = Vpc,
                 ClusterName = "tinynote-cluster",
+            });
+
+            // CloudWatch Log Group for Frontend - nginx access/error logs
+            var frontendLogGroup = new LogGroup(this, "FrontendLogGroup", new LogGroupProps
+            {
+                LogGroupName = "/ecs/tinynote/frontend",
+                Retention = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
             });
 
             // Step 6: Application Load Balancer (ALB) - created with FrontendService pattern
@@ -114,11 +124,25 @@ namespace Cdk
                 {
                     Image = ContainerImage.FromDockerImageAsset(FrontendImage),
                     ContainerPort = 80,
+                    LogDriver = LogDriver.AwsLogs(new AwsLogDriverProps
+                    {
+                        LogGroup = frontendLogGroup,
+                        StreamPrefix = "frontend",
+                        Mode = AwsLogDriverMode.NON_BLOCKING,
+                    }),
                 },
                 PublicLoadBalancer = true,
                 LoadBalancerName = "tinynote-alb",
                 TaskSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
-                AssignPublicIp = false,
+                AssignPublicIp = false
+            });
+
+            // CloudWatch Log Group for API - captures startup errors and stdout/stderr
+            var apiLogGroup = new LogGroup(this, "ApiLogGroup", new LogGroupProps
+            {
+                LogGroupName = "/ecs/tinynote/api",
+                Retention = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
             });
 
             // API target group and Fargate service
@@ -139,8 +163,8 @@ namespace Cdk
 
             var apiTaskDef = new FargateTaskDefinition(this, "ApiTaskDef", new FargateTaskDefinitionProps
             {
-                Cpu = 256,
-                MemoryLimitMiB = 512,
+                Cpu = 512,
+                MemoryLimitMiB = 2048,  // Increased from 512 MB for .NET runtime stability (avoids exit 139)
                 RuntimePlatform = new RuntimePlatform
                 {
                     CpuArchitecture = CpuArchitecture.X86_64,
@@ -152,11 +176,18 @@ namespace Cdk
             {
                 Image = ContainerImage.FromDockerImageAsset(ApiImage),
                 PortMappings = new[] { new PortMapping { ContainerPort = 8080 } },
+                Logging = LogDriver.AwsLogs(new AwsLogDriverProps
+                {
+                    LogGroup = apiLogGroup,
+                    StreamPrefix = "api",
+                    Mode = AwsLogDriverMode.NON_BLOCKING,
+                }),
                 Environment = new Dictionary<string, string>
                 {
                     ["ASPNETCORE_ENVIRONMENT"] = "Production",
                     ["ASPNETCORE_URLS"] = "http://+:8080",
                     ["ConnectionStrings__DefaultConnection"] = connectionString,
+                    ["Cors__AllowedOrigins"] = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
                 },
             });
 
@@ -191,6 +222,18 @@ namespace Cdk
             {
                 Value = frontendService.LoadBalancer.LoadBalancerDnsName,
                 Description = "ALB DNS name",
+            });
+
+            new CfnOutput(this, "ApiLogGroupOutput", new CfnOutputProps
+            {
+                Value = apiLogGroup.LogGroupName,
+                Description = "CloudWatch Log Group for API container (stdout/stderr)",
+            });
+
+            new CfnOutput(this, "FrontendLogGroupOutput", new CfnOutputProps
+            {
+                Value = frontendLogGroup.LogGroupName,
+                Description = "CloudWatch Log Group for Frontend container (nginx logs)",
             });
         }
     }
