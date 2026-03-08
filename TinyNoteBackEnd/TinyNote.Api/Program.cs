@@ -32,7 +32,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -40,16 +40,17 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Apply migrations on startup (runs in API container with DB access)
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<NotesDbContext>();
+    dbContext.Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-
-    using (var scope = app.Services.CreateScope()) 
-    {
-        var dbContext = scope.ServiceProvider.GetRequiredService<NotesDbContext>();
-        dbContext.Database.Migrate();
-    }
 }
 
 app.UseSerilogRequestLogging();
