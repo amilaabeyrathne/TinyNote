@@ -7,3 +7,5 @@
 **/.dockerignore
 **/docker-compose*.yml
 **/*.md
+CDK
+**/cdk.out
