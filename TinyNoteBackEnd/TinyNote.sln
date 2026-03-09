@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TinyNote.Api", "TinyNote.Ap
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TinyNote.Tests", "TinyNotes.Tests\TinyNote.Tests.csproj", "{4393E09B-61B7-4620-835A-CDC1EBA6AF74}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cdk", "CDK\src\Cdk\Cdk.csproj", "{1ED259B9-F919-311B-C949-5F3A3B0BBACF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CDK", "CDK\src\Cdk\CDK.csproj", "{1ED259B9-F919-311B-C949-5F3A3B0BBACF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

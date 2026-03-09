@@ -17,161 +17,159 @@ namespace Cdk
 {
     public class CdkStack : Stack
     {
-        public IVpc Vpc { get; }
-        public ISecurityGroup AlbSecurityGroup { get; }
-        public ISecurityGroup EcsTasksSecurityGroup { get; }
-        public ISecurityGroup RdsSecurityGroup { get; }
-        public IDatabaseInstance Database { get; }
-        public DockerImageAsset ApiImage { get; }
-        public DockerImageAsset FrontendImage { get; }
-
         internal CdkStack(Construct scope, string id, IStackProps props = null) : base(scope, id, props)
         {
-            // VPC with 2 AZs, public and private subnets (1 NAT Gateway to reduce cost)
-            Vpc = new Vpc(this, "TinyNoteVpc", new VpcProps
+            var (vpc, albSg, ecsTasksSg, rdsSg) = CreateNetworking();
+
+            var database = CreateDatabase(vpc, rdsSg);
+
+            var (apiImage, frontendImage) = CreateImageAssets();
+
+            var cluster = CreateCluster(vpc);
+
+            var metricsLogGroup = CreateObservabilityCollector(cluster, vpc, ecsTasksSg);
+
+            var (frontendService, frontendLogGroup) = CreateFrontendService(cluster, frontendImage);
+
+            var apiLogGroup = CreateApiService(cluster, vpc, apiImage, frontendService, database, ecsTasksSg);
+
+            AddOutputs(frontendService, apiLogGroup, frontendLogGroup, metricsLogGroup);
+        }
+
+        // VPC with 2 AZs, 1 NAT Gateway; three security groups:
+        //   albSg      – internet → ALB (port 80)
+        //   ecsTasksSg – ALB → ECS tasks (ports 80 and 8080)
+        //   rdsSg      – ECS tasks → RDS (port 5432)
+        private (IVpc vpc, ISecurityGroup albSg, ISecurityGroup ecsTasksSg, ISecurityGroup rdsSg) CreateNetworking()
+        {
+            var vpc = new Vpc(this, "TinyNoteVpc", new VpcProps
             {
                 MaxAzs = 2,
                 NatGateways = 1,
             });
 
-            // Security group for ALB - allow HTTP/HTTPS from internet
-            AlbSecurityGroup = new SecurityGroup(this, "AlbSecurityGroup", new SecurityGroupProps
+            var albSg = new SecurityGroup(this, "AlbSecurityGroup", new SecurityGroupProps
             {
-                Vpc = Vpc,
-                Description = "Allow HTTP/HTTPS traffic to ALB",
+                Vpc = vpc,
+                Description = "Allow HTTP traffic to ALB",
                 AllowAllOutbound = true,
             });
-            AlbSecurityGroup.AddIngressRule(Peer.AnyIpv4(), Port.Tcp(80), "Allow HTTP");
-            AlbSecurityGroup.AddIngressRule(Peer.AnyIpv4(), Port.Tcp(443), "Allow HTTPS");
+            albSg.AddIngressRule(Peer.AnyIpv4(), Port.Tcp(80), "Allow HTTP");
 
-            // Security group for ECS tasks - allow traffic only from ALB
-            EcsTasksSecurityGroup = new SecurityGroup(this, "EcsTasksSecurityGroup", new SecurityGroupProps
+            var ecsTasksSg = new SecurityGroup(this, "EcsTasksSecurityGroup", new SecurityGroupProps
             {
-                Vpc = Vpc,
+                Vpc = vpc,
                 Description = "Allow traffic from ALB to ECS tasks",
                 AllowAllOutbound = true,
             });
-            EcsTasksSecurityGroup.AddIngressRule(Peer.SecurityGroupId(AlbSecurityGroup.SecurityGroupId), Port.Tcp(80), "Allow HTTP from ALB (frontend)");
-            EcsTasksSecurityGroup.AddIngressRule(Peer.SecurityGroupId(AlbSecurityGroup.SecurityGroupId), Port.Tcp(8080), "Allow port 8080 from ALB (API)");
+            ecsTasksSg.AddIngressRule(Peer.SecurityGroupId(albSg.SecurityGroupId), Port.Tcp(80),   "Allow HTTP from ALB (frontend)");
+            ecsTasksSg.AddIngressRule(Peer.SecurityGroupId(albSg.SecurityGroupId), Port.Tcp(8080), "Allow port 8080 from ALB (API)");
 
-            // Security group for RDS - allow PostgreSQL from ECS API tasks only
-            RdsSecurityGroup = new SecurityGroup(this, "RdsSecurityGroup", new SecurityGroupProps
+            var rdsSg = new SecurityGroup(this, "RdsSecurityGroup", new SecurityGroupProps
             {
-                Vpc = Vpc,
+                Vpc = vpc,
                 Description = "Allow PostgreSQL access from API tasks",
                 AllowAllOutbound = false,
             });
-            RdsSecurityGroup.AddIngressRule(Peer.SecurityGroupId(EcsTasksSecurityGroup.SecurityGroupId), Port.Tcp(5432), "Allow PostgreSQL from API tasks");
+            rdsSg.AddIngressRule(Peer.SecurityGroupId(ecsTasksSg.SecurityGroupId), Port.Tcp(5432), "Allow PostgreSQL from API tasks");
 
-            // RDS PostgreSQL 16 in private subnets
-            Database = new DatabaseInstance(this, "TinyNoteDatabase", new DatabaseInstanceProps
+            return (vpc, albSg, ecsTasksSg, rdsSg);
+        }
+
+        
+        // RDS PostgreSQL
+        // PostgreSQL 16 in private subnets; credentials passed as plain text for
+        // simplicity (use Secrets Manager for production hardening).
+        private IDatabaseInstance CreateDatabase(IVpc vpc, ISecurityGroup rdsSg)
+        {
+            return new DatabaseInstance(this, "TinyNoteDatabase", new DatabaseInstanceProps
             {
                 Engine = DatabaseInstanceEngine.Postgres(new PostgresInstanceEngineProps { Version = PostgresEngineVersion.VER_16 }),
                 InstanceType = Amazon.CDK.AWS.EC2.InstanceType.Of(InstanceClass.BURSTABLE3, InstanceSize.MICRO),
-                Vpc = Vpc,
+                Vpc = vpc,
                 VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
-                SecurityGroups = new[] { RdsSecurityGroup },
+                SecurityGroups = new[] { rdsSg },
                 DatabaseName = "tinynote",
                 Credentials = Credentials.FromPassword("postgres", SecretValue.UnsafePlainText("postgres")),
                 RemovalPolicy = RemovalPolicy.DESTROY,
             });
+        }
 
-            // ECR image assets - use assembly location for reliable paths when CDK spawns the app
-            var assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            var cdkRoot = Path.GetFullPath(Path.Combine(assemblyDir!, "..", "..", "..", "..", ".."));
-            var backendRoot = Path.GetFullPath(Path.Combine(cdkRoot, ".."));
-            var frontendDir = Path.GetFullPath(Path.Combine(backendRoot, "..", "TinyNoteFrontEnd", "TinyNote"));
+        // Docker Image Assets
+        // CDK builds both images locally during cdk deploy and pushes them to ECR.
+        // Paths are resolved relative to the assembly location so they work when
+        // CDK spawns the synthesizer as a subprocess.
+        private (DockerImageAsset apiImage, DockerImageAsset frontendImage) CreateImageAssets()
+        {
+            var assemblyDir  = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var cdkRoot      = Path.GetFullPath(Path.Combine(assemblyDir!, "..", "..", "..", "..", ".."));
+            var backendRoot  = Path.GetFullPath(Path.Combine(cdkRoot, ".."));
+            var frontendDir  = Path.GetFullPath(Path.Combine(backendRoot, "..", "TinyNoteFrontEnd", "TinyNote"));
 
-            ApiImage = new DockerImageAsset(this, "ApiImage", new DockerImageAssetProps
+            var apiImage = new DockerImageAsset(this, "ApiImage", new DockerImageAssetProps
             {
                 Directory = backendRoot,
-                File = "TinyNote.Api/Dockerfile",
-                Platform = Platform_.LINUX_AMD64,  // Use strongly-typed CDK Platform enum, not string
+                File      = "TinyNote.Api/Dockerfile",
+                Platform  = Platform_.LINUX_AMD64,
             });
 
-            FrontendImage = new DockerImageAsset(this, "FrontendImage", new DockerImageAssetProps
+            var frontendImage = new DockerImageAsset(this, "FrontendImage", new DockerImageAssetProps
             {
                 Directory = frontendDir,
             });
 
-            // Connection string from Database resource (port 5432 = PostgreSQL standard)
-            var connectionString = $"Host={Database.InstanceEndpoint.Hostname};Port=5432;Database=tinynote;Username=postgres;Password=postgres";
+            return (apiImage, frontendImage);
+        }
 
-            // ECS Cluster with a private DNS namespace (tinynote.local).
-            // Creates a Route 53 private hosted zone visible only inside the VPC.
-            // The collector registers an A record: collector.tinynote.local → task IP.
-            var cluster = new Cluster(this, "TinyNoteCluster", new ClusterProps
+        //  ECS Cluster
+        // Fargate cluster with a Route 53 private DNS namespace (tinynote.local)
+        // so internal services can resolve each other by DNS name inside the VPC.
+        private Cluster CreateCluster(IVpc vpc)
+        {
+            return new Cluster(this, "TinyNoteCluster", new ClusterProps
             {
-                Vpc = Vpc,
+                Vpc         = vpc,
                 ClusterName = "tinynote-cluster",
                 DefaultCloudMapNamespace = new CloudMapNamespaceOptions
                 {
                     Name = "tinynote.local",
                     Type = NamespaceType.DNS_PRIVATE,
-                    Vpc = Vpc,
+                    Vpc  = vpc,
                 },
             });
+        }
 
-            // -----------------------------------------------------------------------
-            // ADOT Collector Service (central, no sidecar per API task)
-            // API tasks resolve collector.tinynote.local via Route 53 private DNS → task IP
-            // Direct HTTP connection, no proxy required
-            // -----------------------------------------------------------------------
-
-            // SG for the collector tasks - accepts OTLP directly from API task SG
-            var collectorTaskSg = new SecurityGroup(this, "CollectorTaskSg", new SecurityGroupProps
+        // Observability – Central ADOT Collector
+        // Single Fargate task receives OTLP HTTP from all API instances and exports
+        // metrics to CloudWatch via the EMF format.  Registered in Cloud Map as
+        // collector.tinynote.local so API tasks can reach it without a proxy.
+        private ILogGroup CreateObservabilityCollector(Cluster cluster, IVpc vpc, ISecurityGroup ecsTasksSg)
+        {
+            var collectorSg = new SecurityGroup(this, "CollectorTaskSg", new SecurityGroupProps
             {
-                Vpc = Vpc,
+                Vpc         = vpc,
                 Description = "Allow OTLP from API tasks to collector",
                 AllowAllOutbound = true,
             });
-            collectorTaskSg.AddIngressRule(
-                Peer.SecurityGroupId(EcsTasksSecurityGroup.SecurityGroupId),
+            collectorSg.AddIngressRule(
+                Peer.SecurityGroupId(ecsTasksSg.SecurityGroupId),
                 Port.Tcp(4318),
                 "Allow OTLP HTTP from API tasks");
 
-            // CloudWatch Log Group for the collector container stdout/stderr
             var collectorLogGroup = new LogGroup(this, "CollectorLogGroup", new LogGroupProps
             {
-                LogGroupName = "/ecs/tinynote/collector",
-                Retention = RetentionDays.ONE_MONTH,
+                LogGroupName  = "/ecs/tinynote/collector",
+                Retention     = RetentionDays.ONE_MONTH,
                 RemovalPolicy = RemovalPolicy.DESTROY,
             });
 
-            // CloudWatch Log Group where the awsemf exporter writes EMF metric entries
-            // (auto-extracted by CloudWatch into the TinyNote metrics namespace)
             var metricsLogGroup = new LogGroup(this, "MetricsLogGroup", new LogGroupProps
             {
-                LogGroupName = "/aws/otel/tinynote-metrics",
-                Retention = RetentionDays.ONE_MONTH,
+                LogGroupName  = "/aws/otel/tinynote-metrics",
+                Retention     = RetentionDays.ONE_MONTH,
                 RemovalPolicy = RemovalPolicy.DESTROY,
             });
 
-            // ADOT Collector task definition
-            var collectorTaskDef = new FargateTaskDefinition(this, "CollectorTaskDef", new FargateTaskDefinitionProps
-            {
-                Cpu = 256,
-                MemoryLimitMiB = 512,
-                RuntimePlatform = new RuntimePlatform
-                {
-                    CpuArchitecture = CpuArchitecture.X86_64,
-                    OperatingSystemFamily = OperatingSystemFamily.LINUX,
-                },
-            });
-
-            // Allow the collector task role to write EMF entries to CloudWatch Logs
-            collectorTaskDef.TaskRole.AddManagedPolicy(
-                ManagedPolicy.FromAwsManagedPolicyName("CloudWatchAgentServerPolicy"));
-
-            // Allow the execution role to pull the ADOT image from ECR Public (public.ecr.aws).
-            // Fargate requires ecr-public:GetAuthorizationToken even for anonymous pulls.
-            collectorTaskDef.ObtainExecutionRole().AddManagedPolicy(
-                ManagedPolicy.FromAwsManagedPolicyName("AmazonElasticContainerRegistryPublicReadOnly"));
-
-            // ADOT Collector config:
-            //   - Receives OTLP HTTP on 4318
-            //   - Exports metrics via awsemf (EMF JSON → CloudWatch Metrics namespace "TinyNote")
-            //   - health_check extension provides a readiness endpoint on 13133
             var adotConfig = """
                 extensions:
                   health_check:
@@ -197,184 +195,220 @@ namespace Cdk
                       exporters: [awsemf]
                 """;
 
-            collectorTaskDef.AddContainer("collector", new ContainerDefinitionOptions
+            var taskDef = new FargateTaskDefinition(this, "CollectorTaskDef", new FargateTaskDefinitionProps
             {
-                Image = ContainerImage.FromRegistry("public.ecr.aws/aws-observability/aws-otel-collector:latest"),
-                PortMappings = new[]
-                {
-                    new PortMapping { ContainerPort = 4318 },
-                },
-                Logging = LogDriver.AwsLogs(new AwsLogDriverProps
-                {
-                    LogGroup = collectorLogGroup,
-                    StreamPrefix = "collector",
-                    Mode = AwsLogDriverMode.NON_BLOCKING,
-                }),
-                Environment = new Dictionary<string, string>
-                {
-                    ["AOT_CONFIG_CONTENT"] = adotConfig,
-                    ["AWS_REGION"] = Region,
-                },
-            });
-
-            // Collector Fargate service - registered in Cloud Map as an A record.
-            // collector.tinynote.local resolves to the collector task's private IP (TTL 10s).
-            var collectorService = new FargateService(this, "CollectorService", new FargateServiceProps
-            {
-                Cluster = cluster,
-                TaskDefinition = collectorTaskDef,
-                DesiredCount = 1,
-                SecurityGroups = new[] { collectorTaskSg },
-                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
-                AssignPublicIp = false,
-            });
-
-            collectorService.EnableCloudMap(new CloudMapOptions
-            {
-                Name = "collector",
-                DnsRecordType = DnsRecordType.A,
-                DnsTtl = Duration.Seconds(10),
-            });
-
-            // -----------------------------------------------------------------------
-            // Frontend and API services
-            // -----------------------------------------------------------------------
-
-            // CloudWatch Log Group for Frontend - nginx access/error logs
-            var frontendLogGroup = new LogGroup(this, "FrontendLogGroup", new LogGroupProps
-            {
-                LogGroupName = "/ecs/tinynote/frontend",
-                Retention = RetentionDays.ONE_MONTH,
-                RemovalPolicy = RemovalPolicy.DESTROY,
-            });
-
-            // Application Load Balancer (ALB) - created with FrontendService pattern
-            // - Internet-facing ALB in public subnets
-            // - Listener on port 80
-            // - Path routing: /api* -> API, default -> Frontend
-            var frontendService = new ApplicationLoadBalancedFargateService(this, "FrontendService", new ApplicationLoadBalancedFargateServiceProps
-            {
-                Cluster = cluster,
-                Cpu = 256,
-                MemoryLimitMiB = 512,
-                DesiredCount = 1,
-                TaskImageOptions = new ApplicationLoadBalancedTaskImageOptions
-                {
-                    Image = ContainerImage.FromDockerImageAsset(FrontendImage),
-                    ContainerPort = 80,
-                    LogDriver = LogDriver.AwsLogs(new AwsLogDriverProps
-                    {
-                        LogGroup = frontendLogGroup,
-                        StreamPrefix = "frontend",
-                        Mode = AwsLogDriverMode.NON_BLOCKING,
-                    }),
-                },
-                PublicLoadBalancer = true,
-                LoadBalancerName = "tinynote-alb",
-                TaskSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
-                AssignPublicIp = false
-            });
-
-            // CloudWatch Log Group for API - captures startup errors and stdout/stderr
-            var apiLogGroup = new LogGroup(this, "ApiLogGroup", new LogGroupProps
-            {
-                LogGroupName = "/ecs/tinynote/api",
-                Retention = RetentionDays.ONE_MONTH,
-                RemovalPolicy = RemovalPolicy.DESTROY,
-            });
-
-            // API target group and Fargate service
-            var apiTargetGroup = new ApplicationTargetGroup(this, "ApiTargetGroup", new ApplicationTargetGroupProps
-            {
-                Vpc = Vpc,
-                Port = 8080,
-                Protocol = ApplicationProtocol.HTTP,
-                TargetType = TargetType.IP,
-                HealthCheck = new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
-                {
-                    Path = "/api/notes",
-                    Interval = Duration.Seconds(30),
-                    Timeout = Duration.Seconds(5),
-                    HealthyHttpCodes = "200,400",
-                },
-            });
-
-            var apiTaskDef = new FargateTaskDefinition(this, "ApiTaskDef", new FargateTaskDefinitionProps
-            {
-                Cpu = 512,
-                MemoryLimitMiB = 2048,  
+                Cpu             = 256,
+                MemoryLimitMiB  = 512,
                 RuntimePlatform = new RuntimePlatform
                 {
-                    CpuArchitecture = CpuArchitecture.X86_64,
+                    CpuArchitecture       = CpuArchitecture.X86_64,
                     OperatingSystemFamily = OperatingSystemFamily.LINUX,
                 },
             });
 
-            apiTaskDef.AddContainer("api", new ContainerDefinitionOptions
+            taskDef.TaskRole.AddManagedPolicy(
+                ManagedPolicy.FromAwsManagedPolicyName("CloudWatchAgentServerPolicy"));
+
+            taskDef.ObtainExecutionRole().AddManagedPolicy(
+                ManagedPolicy.FromAwsManagedPolicyName("AmazonElasticContainerRegistryPublicReadOnly"));
+
+            taskDef.AddContainer("collector", new ContainerDefinitionOptions
             {
-                Image = ContainerImage.FromDockerImageAsset(ApiImage),
-                PortMappings = new[] { new PortMapping { ContainerPort = 8080 } },
-                Logging = LogDriver.AwsLogs(new AwsLogDriverProps
+                Image        = ContainerImage.FromRegistry("public.ecr.aws/aws-observability/aws-otel-collector:latest"),
+                PortMappings = new[] { new PortMapping { ContainerPort = 4318 } },
+                Logging      = LogDriver.AwsLogs(new AwsLogDriverProps
                 {
-                    LogGroup = apiLogGroup,
-                    StreamPrefix = "api",
-                    Mode = AwsLogDriverMode.NON_BLOCKING,
+                    LogGroup      = collectorLogGroup,
+                    StreamPrefix  = "collector",
+                    Mode          = AwsLogDriverMode.NON_BLOCKING,
                 }),
                 Environment = new Dictionary<string, string>
                 {
-                    ["ASPNETCORE_ENVIRONMENT"] = "Production",
-                    ["ASPNETCORE_URLS"] = "http://+:8080",
-                    ["ConnectionStrings__DefaultConnection"] = connectionString,
-                    ["Cors__AllowedOrigins"] = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
-                    // Route 53 private DNS resolves collector.tinynote.local → collector task IP
-                    ["OpenTelemetry__OtlpEndpoint"] = "http://collector.tinynote.local:4318",
+                    ["AOT_CONFIG_CONTENT"] = adotConfig,
+                    ["AWS_REGION"]         = Region,
                 },
             });
 
-            // API service - no Service Connect needed.
-            // DNS resolves collector.tinynote.local via the Route 53 private hosted zone.
-            var apiService = new FargateService(this, "ApiService", new FargateServiceProps
+            var service = new FargateService(this, "CollectorService", new FargateServiceProps
             {
-                Cluster = cluster,
-                TaskDefinition = apiTaskDef,
-                DesiredCount = 1,
-                SecurityGroups = new[] { EcsTasksSecurityGroup },
-                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
+                Cluster        = cluster,
+                TaskDefinition = taskDef,
+                DesiredCount   = 1,
+                SecurityGroups = new[] { collectorSg },
+                VpcSubnets     = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
                 AssignPublicIp = false,
             });
-            apiService.AttachToApplicationTargetGroup(apiTargetGroup);
-            Database.Connections.AllowDefaultPortFrom(apiService);
 
-            // Path-based routing: /api* -> API, default -> Frontend
-            new ApplicationListenerRule(this, "ApiListenerRule", new ApplicationListenerRuleProps
+            service.EnableCloudMap(new CloudMapOptions
             {
-                Listener = frontendService.Listener,
-                Priority = 10,
-                Conditions = new[] { ListenerCondition.PathPatterns(new[] { "/api*" }) },
-                Action = ListenerAction.Forward(new[] { apiTargetGroup }),
+                Name          = "collector",
+                DnsRecordType = DnsRecordType.A,
+                DnsTtl        = Duration.Seconds(10),
             });
 
+            return metricsLogGroup;
+        }
+
+        // Frontend Service and Application Load Balancer
+        // ApplicationLoadBalancedFargateService creates the internet-facing ALB,
+        // listener on port 80, and the frontend Fargate service in one construct.
+        private (ApplicationLoadBalancedFargateService service, ILogGroup logGroup) CreateFrontendService(
+            Cluster cluster, DockerImageAsset frontendImage)
+        {
+            var logGroup = new LogGroup(this, "FrontendLogGroup", new LogGroupProps
+            {
+                LogGroupName  = "/ecs/tinynote/frontend",
+                Retention     = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
+            });
+
+            var service = new ApplicationLoadBalancedFargateService(this, "FrontendService",
+                new ApplicationLoadBalancedFargateServiceProps
+                {
+                    Cluster          = cluster,
+                    Cpu              = 256,
+                    MemoryLimitMiB   = 512,
+                    DesiredCount     = 1,
+                    TaskImageOptions = new ApplicationLoadBalancedTaskImageOptions
+                    {
+                        Image     = ContainerImage.FromDockerImageAsset(frontendImage),
+                        ContainerPort = 80,
+                        LogDriver = LogDriver.AwsLogs(new AwsLogDriverProps
+                        {
+                            LogGroup     = logGroup,
+                            StreamPrefix = "frontend",
+                            Mode         = AwsLogDriverMode.NON_BLOCKING,
+                        }),
+                    },
+                    PublicLoadBalancer = true,
+                    LoadBalancerName   = "tinynote-alb",
+                    TaskSubnets        = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
+                    AssignPublicIp     = false,
+                });
+
+            return (service, logGroup);
+        }
+
+        // API Service
+        // Fargate service behind the shared ALB; path /api* is routed here.
+        // Connects to RDS via connection string; exports metrics to the ADOT
+        // collector via Cloud Map DNS (collector.tinynote.local:4318).
+        private ILogGroup CreateApiService(
+            Cluster cluster,
+            IVpc vpc,
+            DockerImageAsset apiImage,
+            ApplicationLoadBalancedFargateService frontendService,
+            IDatabaseInstance database,
+            ISecurityGroup ecsTasksSg)
+        {
+            var logGroup = new LogGroup(this, "ApiLogGroup", new LogGroupProps
+            {
+                LogGroupName  = "/ecs/tinynote/api",
+                Retention     = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
+            });
+
+            var connectionString = $"Host={database.InstanceEndpoint.Hostname};Port=5432;Database=tinynote;Username=postgres;Password=postgres";
+
+            var targetGroup = new ApplicationTargetGroup(this, "ApiTargetGroup", new ApplicationTargetGroupProps
+            {
+                Vpc         = vpc,
+                Port        = 8080,
+                Protocol    = ApplicationProtocol.HTTP,
+                TargetType  = TargetType.IP,
+                HealthCheck = new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
+                {
+                    Path             = "/api/notes",
+                    Interval         = Duration.Seconds(30),
+                    Timeout          = Duration.Seconds(5),
+                    HealthyHttpCodes = "200,400",
+                },
+            });
+
+            var taskDef = new FargateTaskDefinition(this, "ApiTaskDef", new FargateTaskDefinitionProps
+            {
+                Cpu             = 512,
+                MemoryLimitMiB  = 2048,
+                RuntimePlatform = new RuntimePlatform
+                {
+                    CpuArchitecture       = CpuArchitecture.X86_64,
+                    OperatingSystemFamily = OperatingSystemFamily.LINUX,
+                },
+            });
+
+            taskDef.AddContainer("api", new ContainerDefinitionOptions
+            {
+                Image        = ContainerImage.FromDockerImageAsset(apiImage),
+                PortMappings = new[] { new PortMapping { ContainerPort = 8080 } },
+                Logging      = LogDriver.AwsLogs(new AwsLogDriverProps
+                {
+                    LogGroup     = logGroup,
+                    StreamPrefix = "api",
+                    Mode         = AwsLogDriverMode.NON_BLOCKING,
+                }),
+                Environment = new Dictionary<string, string>
+                {
+                    ["ASPNETCORE_ENVIRONMENT"]              = "Production",
+                    ["ASPNETCORE_URLS"]                     = "http://+:8080",
+                    ["ConnectionStrings__DefaultConnection"] = connectionString,
+                    ["Cors__AllowedOrigins"]                = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
+                    ["OpenTelemetry__OtlpEndpoint"]         = "http://collector.tinynote.local:4318",
+                },
+            });
+
+            var apiService = new FargateService(this, "ApiService", new FargateServiceProps
+            {
+                Cluster        = cluster,
+                TaskDefinition = taskDef,
+                DesiredCount   = 1,
+                SecurityGroups = new[] { ecsTasksSg },
+                VpcSubnets     = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
+                AssignPublicIp = false,
+            });
+
+            apiService.AttachToApplicationTargetGroup(targetGroup);
+            database.Connections.AllowDefaultPortFrom(apiService);
+
+            // Step 6 – ALB routing: /api* → API, default → Frontend
+            new ApplicationListenerRule(this, "ApiListenerRule", new ApplicationListenerRuleProps
+            {
+                Listener   = frontendService.Listener,
+                Priority   = 10,
+                Conditions = new[] { ListenerCondition.PathPatterns(new[] { "/api*" }) },
+                Action     = ListenerAction.Forward(new[] { targetGroup }),
+            });
+
+            return logGroup;
+        }
+
+        //  CloudFormation Outputs
+        private void AddOutputs(
+            ApplicationLoadBalancedFargateService frontendService,
+            ILogGroup apiLogGroup,
+            ILogGroup frontendLogGroup,
+            ILogGroup metricsLogGroup)
+        {
             new CfnOutput(this, "LoadBalancerUrl", new CfnOutputProps
             {
-                Value = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
-                Description = "TinyNote application URL (ALB)",
+                Value       = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
+                Description = "TinyNote application URL",
             });
 
             new CfnOutput(this, "ApiLogGroupOutput", new CfnOutputProps
             {
-                Value = apiLogGroup.LogGroupName,
-                Description = "CloudWatch Log Group for API container (stdout/stderr)",
+                Value       = apiLogGroup.LogGroupName,
+                Description = "CloudWatch Log Group for API container",
             });
 
             new CfnOutput(this, "FrontendLogGroupOutput", new CfnOutputProps
             {
-                Value = frontendLogGroup.LogGroupName,
-                Description = "CloudWatch Log Group for Frontend container (nginx logs)",
+                Value       = frontendLogGroup.LogGroupName,
+                Description = "CloudWatch Log Group for Frontend container",
             });
 
             new CfnOutput(this, "MetricsLogGroupOutput", new CfnOutputProps
             {
-                Value = metricsLogGroup.LogGroupName,
+                Value       = metricsLogGroup.LogGroupName,
                 Description = "CloudWatch Log Group for OTEL EMF metrics",
             });
         }

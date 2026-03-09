@@ -4,7 +4,6 @@ using TinyNote.Api.DTOs;
 using TinyNote.Api.Exceptions;
 using TinyNote.Api.Metrics;
 using TinyNote.Api.Repository;
-using System.Text;
 
 namespace TinyNote.Api.Services;
 
