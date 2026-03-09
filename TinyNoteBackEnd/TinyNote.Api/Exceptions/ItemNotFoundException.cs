@@ -2,7 +2,7 @@
 {
     public class ItemNotFoundException : Exception
     {
-        public ItemNotFoundException(Guid id) : base($"The item wit ID {id} do not exists")
+        public ItemNotFoundException(Guid id) : base($"The item with ID {id} does not exist")
         {
         }
     }

@@ -25,13 +25,6 @@ public class NoteRepository : INoteRepository
 
     public async Task<Note?> UpdateNoteAsync(Note note, CancellationToken cancellationToken = default)
     {
-        var noteToUpdate = await _context.Notes.FindAsync([note.Id], cancellationToken);
-        if (note is null)
-            return null;
-
-        note.Title = note.Title;
-        note.Content = note.Content;
-        note.Summary = note.Summary;
         note.UpdateAt = DateTimeOffset.UtcNow;
 
         await _context.SaveChangesAsync(cancellationToken);

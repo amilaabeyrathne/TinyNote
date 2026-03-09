@@ -22,7 +22,7 @@ builder.Services.AddAutoMapper(typeof(Program));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<INoteRepository, NoteRepository>();
 builder.Services.AddScoped<INotesService, NotesService>();
-builder.Services.AddScoped<ExceptionHandlingMiddleware>();
+builder.Services.AddTransient <ExceptionHandlingMiddleware>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

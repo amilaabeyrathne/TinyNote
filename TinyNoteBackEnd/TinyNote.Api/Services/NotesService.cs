@@ -52,10 +52,9 @@ public class NotesService : INotesService
         existingNote.Content = request.Content;
         existingNote.Summary = GetSummary(request.Content);
         existingNote.UpdateAt = DateTimeOffset.UtcNow;
+
         var updatedNote = await _noteRepository.UpdateNoteAsync(existingNote, cancellationToken);
-
         _logger.LogInformation("Note with Id {NoteId} updated successfully", request.Id);
-
         return _mapper.Map<NoteResponse>(updatedNote);
     }
 
@@ -85,7 +84,7 @@ public class NotesService : INotesService
         }
         else
         {
-            _logger.LogWarning("Failed to delete note with Id {NoteId}. Note not found.", id);
+            _logger.LogError("Failed to delete note with Id {NoteId}. Note not found.", id);
             throw new ItemNotFoundException(id);
         }
     }
