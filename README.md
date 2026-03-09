@@ -5,16 +5,16 @@ A full-stack note-taking application built with a React/TypeScript frontend, an 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   AWS (CDK / ECS Fargate)            │
-│                                                     │
-│  Internet → ALB (port 80)                           │
-│               ├── /api*  → API Service (port 8080)  │
-│               └── /*     → Frontend Service (nginx) │
-│                                                     │
-│  API ──────────────────────→ RDS PostgreSQL 16      │
+┌─────────────────────────────────────────────────────     ┐
+│                   AWS (CDK / ECS Fargate)                │
+│                                                          │
+│  Internet → ALB (port 80)                                │
+│               ├── /api*  → API Service (port 8080)       │
+│               └── /*     → Frontend Service (nginx)      │
+│                                                          │
+│  API ──────────────────────→ RDS PostgreSQL 16           │
 │  API ──────────────────────→ ADOT Collector → CloudWatch │
-└─────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────     ┘
 ```
 
 | Layer | Technology |
