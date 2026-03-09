@@ -52,6 +52,8 @@ namespace TinyNote.Api.Controllers
         public async Task<IActionResult> DeleteNote(Guid id, CancellationToken cancellationToken = default)
         {
             var isDeleted = await _notesService.DeleteNoteAsync(id, cancellationToken);
+            if (!isDeleted)
+                return NotFound();
             return NoContent();
         }
 

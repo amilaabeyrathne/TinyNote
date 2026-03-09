@@ -91,11 +91,8 @@ public class NotesService : INotesService
             _metrics.NotesDeleted.Add(1);
             return true;
         }
-        else
-        {
-            _logger.LogError("Failed to delete note with Id {NoteId}. Note not found.", id);
-            throw new ItemNotFoundException(id);
-        }
+        _logger.LogWarning("Failed to delete note with Id {NoteId}. Note not found.", id);
+        return false;
     }
     private static string GetSummary(string content)
     {

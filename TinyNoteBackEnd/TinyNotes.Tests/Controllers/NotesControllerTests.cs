@@ -22,10 +22,6 @@ public class NotesControllerTests
         _sut = new NotesController(_notesServiceMock.Object, _mapperMock.Object);
     }
 
-    // -------------------------------------------------------------------------
-    // GetNote
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task GetNote_NoteExists_Returns200OkWithNoteResponse()
     {
@@ -69,14 +65,9 @@ public class NotesControllerTests
 
         var result = await _sut.GetNote(noteId);
 
-        // 404 must not carry a response body that leaks internal data
         result.Should().BeOfType<NotFoundResult>();
         result.Should().NotBeOfType<NotFoundObjectResult>();
     }
-
-    // -------------------------------------------------------------------------
-    // DeleteNote
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task DeleteNote_NoteExists_Returns204NoContent()
@@ -85,12 +76,43 @@ public class NotesControllerTests
 
         _notesServiceMock
             .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(true);
 
         var result = await _sut.DeleteNote(noteId);
 
         result.Should().BeOfType<NoContentResult>()
             .Which.StatusCode.Should().Be(204);
+    }
+
+    [Fact]
+    public async Task DeleteNote_NoteExists_CallsServiceExactlyOnce()
+    {
+        var noteId = Guid.NewGuid();
+
+        _notesServiceMock
+            .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        await _sut.DeleteNote(noteId);
+
+        _notesServiceMock.Verify(
+            s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteNote_NoteExists_Returns204WithNoBody()
+    {
+        var noteId = Guid.NewGuid();
+
+        _notesServiceMock
+            .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _sut.DeleteNote(noteId);
+
+        // 204 must carry no response body
+        result.Should().BeOfType<NoContentResult>();
+        result.Should().NotBeOfType<ObjectResult>();
     }
 
     [Fact]
@@ -104,6 +126,22 @@ public class NotesControllerTests
 
         var act = async () => await _sut.DeleteNote(noteId);
 
-        await act.Should().ThrowAsync<ItemNotFoundException>();
+        await act.Should().ThrowAsync<ItemNotFoundException>()
+            .WithMessage($"*{noteId}*");
+    }
+
+    [Fact]
+    public async Task DeleteNote_ServiceThrowsUnexpectedException_ExceptionPropagates()
+    {
+        var noteId = Guid.NewGuid();
+
+        _notesServiceMock
+            .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Database error"));
+
+        var act = async () => await _sut.DeleteNote(noteId);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Database error");
     }
 }

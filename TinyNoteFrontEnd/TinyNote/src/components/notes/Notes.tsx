@@ -81,7 +81,13 @@ export default function Notes() {
             size="small"
             placeholder="Search notes…"
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
+            onChange={async (e) => {
+              try {
+                await setSearchInput(e.target.value);
+              } catch {
+                toast.error('Failed to search notes');
+              }
+            }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -96,7 +102,13 @@ export default function Notes() {
             <Select
               value={sortBy}
               label="Sort by"
-              onChange={(e) => setSortBy(e.target.value as GetNotesParams['sortBy'])}
+              onChange={async (e) => {
+                try {
+                  await setSortBy(e.target.value as GetNotesParams['sortBy']);
+                } catch {
+                  toast.error('Failed to sort notes');
+                }
+              }}
             >
               <MenuItem value="createdAt">Date</MenuItem>
               <MenuItem value="title">Title</MenuItem>

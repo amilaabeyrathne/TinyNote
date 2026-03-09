@@ -807,4 +807,179 @@ public class NotesServiceTests : IDisposable
             query.SortOrder,
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // -------------------------------------------------------------------------
+    // GetNoteAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetNoteAsync_NoteExists_ReturnsMappedNoteResponse()
+    {
+        var noteId = Guid.NewGuid();
+        var note = new Note { Id = noteId, Title = "Title", Content = "Content" };
+        var expectedResponse = new NoteResponse { Id = noteId, Title = "Title", Content = "Content" };
+
+        _noteRepositoryMock
+            .Setup(r => r.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(note);
+
+        _mapperMock
+            .Setup(m => m.Map<NoteResponse>(note))
+            .Returns(expectedResponse);
+
+        var result = await _sut.GetNoteAsync(noteId);
+
+        result.Should().BeEquivalentTo(expectedResponse);
+    }
+
+    [Fact]
+    public async Task GetNoteAsync_NoteDoesNotExist_ReturnsNull()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Note?)null);
+
+        var result = await _sut.GetNoteAsync(noteId);
+
+        result.Should().BeNull();
+        _mapperMock.Verify(m => m.Map<NoteResponse>(It.IsAny<Note>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetNoteAsync_NoteDoesNotExist_DoesNotThrow()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Note?)null);
+
+        var act = async () => await _sut.GetNoteAsync(noteId);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task GetNoteAsync_PassesCancellationTokenToRepository()
+    {
+        var noteId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        _noteRepositoryMock
+            .Setup(r => r.GetNoteAsync(noteId, token))
+            .ReturnsAsync(new Note { Id = noteId });
+
+        _mapperMock
+            .Setup(m => m.Map<NoteResponse>(It.IsAny<Note>()))
+            .Returns(new NoteResponse());
+
+        await _sut.GetNoteAsync(noteId, token);
+
+        _noteRepositoryMock.Verify(r => r.GetNoteAsync(noteId, token), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetNoteAsync_RepositoryThrows_ExceptionPropagates()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Database error"));
+
+        var act = async () => await _sut.GetNoteAsync(noteId);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Database error");
+
+        _mapperMock.Verify(m => m.Map<NoteResponse>(It.IsAny<Note>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    // DeleteNoteAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task DeleteNoteAsync_NoteExists_CompletesSuccessfully()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var act = async () => await _sut.DeleteNoteAsync(noteId);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task DeleteNoteAsync_NoteExists_CallsRepositoryExactlyOnce()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await _sut.DeleteNoteAsync(noteId);
+
+        _noteRepositoryMock.Verify(
+            r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteNoteAsync_PassesCancellationTokenToRepository()
+    {
+        var noteId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, token))
+            .ReturnsAsync(true);
+
+        await _sut.DeleteNoteAsync(noteId, token);
+
+        _noteRepositoryMock.Verify(r => r.DeleteNoteAsync(noteId, token), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteNoteAsync_RepositoryThrows_ExceptionPropagates()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Database error"));
+
+        var act = async () => await _sut.DeleteNoteAsync(noteId);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Database error");
+    }
+
+    [Fact]
+    public async Task DeleteNoteAsync_CancellationRequestedDuringRepositoryCall_ThrowsOperationCanceledException()
+    {
+        var noteId = Guid.NewGuid();
+        using var cts = new CancellationTokenSource();
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .Returns(async (Guid _, CancellationToken ct) =>
+            {
+                await cts.CancelAsync();
+                ct.ThrowIfCancellationRequested();
+                return true;
+            });
+
+        var act = async () => await _sut.DeleteNoteAsync(noteId, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }
