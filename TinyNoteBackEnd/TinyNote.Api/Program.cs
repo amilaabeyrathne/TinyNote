@@ -48,10 +48,10 @@ builder.Services.AddOpenTelemetry()
 
         if (!string.IsNullOrEmpty(otlpEndpoint))
         {
-            metrics.AddOtlpExporter(o =>
+            metrics.AddOtlpExporter((exporterOptions, readerOptions) =>
             {
-                o.Endpoint = new Uri(otlpEndpoint);
-                o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                exporterOptions.Endpoint = new Uri($"{otlpEndpoint}/v1/metrics");
+                exporterOptions.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
             });
         }
     });
@@ -74,7 +74,6 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Apply migrations on startup (runs in API container with DB access)
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<NotesDbContext>();

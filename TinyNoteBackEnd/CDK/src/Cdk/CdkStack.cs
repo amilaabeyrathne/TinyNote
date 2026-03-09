@@ -97,9 +97,9 @@ namespace Cdk
             // Connection string from Database resource (port 5432 = PostgreSQL standard)
             var connectionString = $"Host={Database.InstanceEndpoint.Hostname};Port=5432;Database=tinynote;Username=postgres;Password=postgres";
 
-            // ECS Cluster with an HTTP Cloud Map namespace for Service Connect.
-            // The collector registers itself as "collector:4318" in the namespace and is
-            // reachable from the API via the Service Connect envoy proxy.
+            // ECS Cluster with a private DNS namespace (tinynote.local).
+            // Creates a Route 53 private hosted zone visible only inside the VPC.
+            // The collector registers an A record: collector.tinynote.local → task IP.
             var cluster = new Cluster(this, "TinyNoteCluster", new ClusterProps
             {
                 Vpc = Vpc,
@@ -107,17 +107,18 @@ namespace Cdk
                 DefaultCloudMapNamespace = new CloudMapNamespaceOptions
                 {
                     Name = "tinynote.local",
-                    Type = NamespaceType.HTTP,
+                    Type = NamespaceType.DNS_PRIVATE,
+                    Vpc = Vpc,
                 },
             });
 
             // -----------------------------------------------------------------------
             // ADOT Collector Service (central, no sidecar per API task)
-            // API tasks send OTLP HTTP → Service Connect proxy → collector → CloudWatch EMF
+            // API tasks resolve collector.tinynote.local via Route 53 private DNS → task IP
+            // Direct HTTP connection, no proxy required
             // -----------------------------------------------------------------------
 
-            // SG for the collector tasks - accepts OTLP from the Service Connect proxy (same SG)
-            // Service Connect routes via its Envoy proxy ENI-to-ENI within the ECS task SG
+            // SG for the collector tasks - accepts OTLP directly from API task SG
             var collectorTaskSg = new SecurityGroup(this, "CollectorTaskSg", new SecurityGroupProps
             {
                 Vpc = Vpc,
@@ -201,7 +202,7 @@ namespace Cdk
                 Image = ContainerImage.FromRegistry("public.ecr.aws/aws-observability/aws-otel-collector:latest"),
                 PortMappings = new[]
                 {
-                    new PortMapping { ContainerPort = 4318, Name = "otlp-http" },
+                    new PortMapping { ContainerPort = 4318 },
                 },
                 Logging = LogDriver.AwsLogs(new AwsLogDriverProps
                 {
@@ -216,8 +217,8 @@ namespace Cdk
                 },
             });
 
-            // Collector Fargate service - exposes itself via Service Connect as "collector:4318".
-            // The Service Connect proxy on API tasks routes http://collector:4318 to this service.
+            // Collector Fargate service - registered in Cloud Map as an A record.
+            // collector.tinynote.local resolves to the collector task's private IP (TTL 10s).
             var collectorService = new FargateService(this, "CollectorService", new FargateServiceProps
             {
                 Cluster = cluster,
@@ -226,18 +227,13 @@ namespace Cdk
                 SecurityGroups = new[] { collectorTaskSg },
                 VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
                 AssignPublicIp = false,
-                ServiceConnectConfiguration = new ServiceConnectProps
-                {
-                    Services = new[]
-                    {
-                        new ServiceConnectService
-                        {
-                            PortMappingName = "otlp-http",
-                            DnsName = "collector",
-                            Port = 4318,
-                        },
-                    },
-                },
+            });
+
+            collectorService.EnableCloudMap(new CloudMapOptions
+            {
+                Name = "collector",
+                DnsRecordType = DnsRecordType.A,
+                DnsTtl = Duration.Seconds(10),
             });
 
             // -----------------------------------------------------------------------
@@ -330,13 +326,13 @@ namespace Cdk
                     ["ASPNETCORE_URLS"] = "http://+:8080",
                     ["ConnectionStrings__DefaultConnection"] = connectionString,
                     ["Cors__AllowedOrigins"] = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
-                    // Service Connect proxy routes collector:4318 to the collector service
-                    ["OpenTelemetry__OtlpEndpoint"] = "http://collector:4318",
+                    // Route 53 private DNS resolves collector.tinynote.local → collector task IP
+                    ["OpenTelemetry__OtlpEndpoint"] = "http://collector.tinynote.local:4318",
                 },
             });
 
-            // API service - Service Connect client mode enabled so the Envoy proxy is injected
-            // and routes outbound requests to "collector:4318" to the collector service.
+            // API service - no Service Connect needed.
+            // DNS resolves collector.tinynote.local via the Route 53 private hosted zone.
             var apiService = new FargateService(this, "ApiService", new FargateServiceProps
             {
                 Cluster = cluster,
@@ -345,10 +341,6 @@ namespace Cdk
                 SecurityGroups = new[] { EcsTasksSecurityGroup },
                 VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
                 AssignPublicIp = false,
-                ServiceConnectConfiguration = new ServiceConnectProps
-                {
-                    Namespace = "tinynote.local",
-                },
             });
             apiService.AttachToApplicationTargetGroup(apiTargetGroup);
             Database.Connections.AllowDefaultPortFrom(apiService);
@@ -366,12 +358,6 @@ namespace Cdk
             {
                 Value = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
                 Description = "TinyNote application URL (ALB)",
-            });
-
-            new CfnOutput(this, "AlbDnsName", new CfnOutputProps
-            {
-                Value = frontendService.LoadBalancer.LoadBalancerDnsName,
-                Description = "ALB DNS name",
             });
 
             new CfnOutput(this, "ApiLogGroupOutput", new CfnOutputProps
