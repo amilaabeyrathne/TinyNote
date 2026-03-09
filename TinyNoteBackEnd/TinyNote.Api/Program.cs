@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using Serilog;
 using TinyNote.Api.Data;
+using TinyNote.Api.Metrics;
 using TinyNote.Api.Middleware;
 using TinyNote.Api.Repository;
 using TinyNote.Api.Services;
@@ -22,11 +25,36 @@ builder.Services.AddAutoMapper(typeof(Program));
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<INoteRepository, NoteRepository>();
 builder.Services.AddScoped<INotesService, NotesService>();
-builder.Services.AddTransient <ExceptionHandlingMiddleware>();
+builder.Services.AddTransient<ExceptionHandlingMiddleware>();
+builder.Services.AddSingleton<TinyNoteMetrics>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+var otlpEndpoint = builder.Configuration["OpenTelemetry:OtlpEndpoint"];
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r
+        .AddService(
+            serviceName: "tinynote-api",
+            serviceVersion: "1.0.0"))
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddMeter(TinyNoteMetrics.MeterName);
+
+        if (!string.IsNullOrEmpty(otlpEndpoint))
+        {
+            metrics.AddOtlpExporter(o =>
+            {
+                o.Endpoint = new Uri(otlpEndpoint);
+                o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+            });
+        }
+    });
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string>()?
     .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

@@ -2,7 +2,9 @@ using AutoMapper;
 using TinyNote.Api.Data.Entities;
 using TinyNote.Api.DTOs;
 using TinyNote.Api.Exceptions;
+using TinyNote.Api.Metrics;
 using TinyNote.Api.Repository;
+using System.Text;
 
 namespace TinyNote.Api.Services;
 
@@ -11,12 +13,14 @@ public class NotesService : INotesService
     private readonly INoteRepository _noteRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<NotesService> _logger;
+    private readonly TinyNoteMetrics _metrics;
 
-    public NotesService(INoteRepository noteRepository, IMapper mapper, ILogger<NotesService> logger)
+    public NotesService(INoteRepository noteRepository, IMapper mapper, ILogger<NotesService> logger, TinyNoteMetrics metrics)
     {
         _noteRepository = noteRepository;
         _logger = logger;
         _mapper = mapper;
+        _metrics = metrics;
     }
 
     public async Task<NoteResponse> AddNoteAsync(CreateNoteRequest request, CancellationToken cancellationToken = default)
@@ -37,6 +41,8 @@ public class NotesService : INotesService
 
         _logger.LogInformation("Note added successfully, Id: {NoteId}", addedNote.Id);
 
+        _metrics.NotesCreated.Add(1, new KeyValuePair<string, object?>("user.id", request.UserId.ToString()));
+
         return _mapper.Map<NoteResponse>(addedNote);
     }
 
@@ -55,6 +61,9 @@ public class NotesService : INotesService
 
         var updatedNote = await _noteRepository.UpdateNoteAsync(existingNote, cancellationToken);
         _logger.LogInformation("Note with Id {NoteId} updated successfully", request.Id);
+
+        _metrics.NotesUpdated.Add(1);
+
         return _mapper.Map<NoteResponse>(updatedNote);
     }
 
@@ -80,6 +89,7 @@ public class NotesService : INotesService
         if (await _noteRepository.DeleteNoteAsync(id, cancellationToken))
         {
             _logger.LogInformation("Note with Id {NoteId} deleted successfully", id);
+            _metrics.NotesDeleted.Add(1);
             return true;
         }
         else
