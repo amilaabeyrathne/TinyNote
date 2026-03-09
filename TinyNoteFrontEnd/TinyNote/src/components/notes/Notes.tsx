@@ -1,3 +1,4 @@
+import { toast } from 'react-toastify';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
@@ -163,9 +164,12 @@ export default function Notes() {
                 <IconButton
                   color="error"
                   size="small"
-                  onClick={() => {
-                    if (window.confirm('Are you sure?')) {
-                      deleteNote({ id: note.id, userId: USER_ID });
+                  onClick={async () => {
+                    if (!window.confirm('Are you sure?')) return;
+                    try {
+                      await deleteNote({ id: note.id, userId: USER_ID }).unwrap();
+                    } catch {
+                      toast.error('Failed to delete note');
                     }
                   }}
                   aria-label="delete"

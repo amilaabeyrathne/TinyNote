@@ -94,7 +94,7 @@ export default function AddNote({ open, onClose, userId, noteID }: AddNoteProps)
         }
         handleClose();
     } catch {
-        toast.error('Failed to add note');
+        toast.error('Failed');
     }
   };
   return (
