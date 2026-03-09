@@ -5,16 +5,16 @@ A full-stack note-taking application built with a React/TypeScript frontend, an 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────       ┐
-│                   AWS (CDK / ECS Fargate)                  │
-│                                                            │
-│  Internet → ALB (port 80)                                  │
-│               ├── /api*  → API Service (port 8080)         │
-│               └── /*     → Frontend Service (nginx)        │
-│                                                            │
-│  API ──────────────────────→ RDS PostgreSQL 16             │
-│  API ──────────────────────→ ADOT Collector → CloudWatch   │
-└─────────────────────────────────────────────────────       ┘
+┌─────────────────────────────────────────────────────┐
+│                   AWS (CDK / ECS Fargate)            │
+│                                                     │
+│  Internet → ALB (port 80)                           │
+│               ├── /api*  → API Service (port 8080)  │
+│               └── /*     → Frontend Service (nginx) │
+│                                                     │
+│  API ──────────────────────→ RDS PostgreSQL 16      │
+│  API ──────────────────────→ ADOT Collector → CloudWatch │
+└─────────────────────────────────────────────────────┘
 ```
 
 | Layer | Technology |
@@ -124,6 +124,10 @@ All endpoints are prefixed with `/api`.
 
 Full interactive documentation is available at `/swagger` when running in Development mode.
 
+### Health check
+
+There is no dedicated `/health` endpoint. The ALB target group (in the CDK stack) uses `GET /api/notes` as its health check path and treats both `HTTP 200` and `HTTP 400` as healthy responses. A `400` is returned when the required `userId` query parameter is missing, which still confirms the API process and database connection are alive. The interval is 30 seconds with a 5-second timeout.
+
 ## AWS Deployment
 
 The CDK stack provisions all required AWS resources in a single `cdk deploy`.
@@ -204,20 +208,19 @@ The following assumptions were made during the design and implementation of this
 
 **Authentication & users**
 - There is no authentication layer. The user identity (`userId`) is a hardcoded GUID in the frontend (`d44dc55f-e08c-4db2-a918-3093f1e11848`) and passed as a query parameter to scope note retrieval. A real production system would derive the user identity from a JWT or session token.
-- Hardcoded GUID is seeded by a Migration script. 
 - The `UserRepository` exists to support future user management but is not wired to any registration or login flow at this stage.
 
 **Data model**
 - Each note belongs to exactly one user and is identified by a server-generated GUID.
 - A `summary` field is auto-generated server-side by truncating `content` to the first 50 characters. Clients do not supply a summary.
-- Data migrations must be handled separately in the production from multiple instances. Currently they run in the start  up. 
+- Notes are soft-deleted by removal from the database; there is no archive or recycle-bin concept.
 
 **Search**
 - Full-text search is implemented using PostgreSQL `ILIKE` (case-insensitive pattern matching) across `title`, `content`, and `summary`. This is sufficient for small-to-medium datasets; a dedicated search index (e.g. pg_trgm, Elasticsearch) would be needed at scale.
 
 **Security**
 - Database credentials (`postgres`/`postgres`) are plain text in both the Docker Compose file and the CDK stack. This is intentional for development simplicity. A production deployment should store credentials in AWS Secrets Manager and inject them at runtime.
-
+- **HTTPS is not configured.** The ALB is provisioned with an HTTP-only listener on port 80; no TLS certificate or HTTPS listener is added by the CDK stack. The public access point (`http://<alb-dns>`) therefore uses unencrypted HTTP. To enable HTTPS, an ACM certificate would need to be provisioned and an HTTPS listener (port 443) added to the ALB, with an HTTP → HTTPS redirect rule on port 80. The API container already listens on plain HTTP inside the VPC (which is correct behind a terminating load balancer), but that termination is not currently in place.
 - CORS is locked to explicit origin lists; wildcard origins are never permitted.
 
 **Infrastructure**
@@ -229,5 +232,6 @@ The following assumptions were made during the design and implementation of this
 **Health checks**
 - The API has no dedicated health-check endpoint (e.g. `/health` or `/healthz`). The ALB reuses `GET /api/notes` as a liveness probe, accepting `HTTP 200` (valid request) and `HTTP 400` (missing `userId` parameter) as healthy status codes. This is intentional to avoid adding infrastructure purely for health checking, given the small scope of the project. A proper `/health` endpoint backed by ASP.NET Core's `IHealthCheck` mechanism would be the recommended approach before production use.
 
-
-
+**Testing**
+- Unit tests cover the service layer (`NotesService`) and controller layer (`NotesController`) using mocked dependencies. There are no integration or end-to-end tests at this stage.
+- The test project targets the same .NET version as the API and shares no runtime state between test cases.
