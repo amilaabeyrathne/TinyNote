@@ -5,7 +5,9 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.ECS;
 using Amazon.CDK.AWS.ECS.Patterns;
+using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Logs;
+using Amazon.CDK.AWS.ServiceDiscovery;
 using Amazon.CDK.AWS.Ecr.Assets;
 using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.RDS;
@@ -95,12 +97,152 @@ namespace Cdk
             // Connection string from Database resource (port 5432 = PostgreSQL standard)
             var connectionString = $"Host={Database.InstanceEndpoint.Hostname};Port=5432;Database=tinynote;Username=postgres;Password=postgres";
 
-            // ECS Cluster
+            // ECS Cluster with an HTTP Cloud Map namespace for Service Connect.
+            // The collector registers itself as "collector:4318" in the namespace and is
+            // reachable from the API via the Service Connect envoy proxy.
             var cluster = new Cluster(this, "TinyNoteCluster", new ClusterProps
             {
                 Vpc = Vpc,
                 ClusterName = "tinynote-cluster",
+                DefaultCloudMapNamespace = new CloudMapNamespaceOptions
+                {
+                    Name = "tinynote.local",
+                    Type = NamespaceType.HTTP,
+                },
             });
+
+            // -----------------------------------------------------------------------
+            // ADOT Collector Service (central, no sidecar per API task)
+            // API tasks send OTLP HTTP → Service Connect proxy → collector → CloudWatch EMF
+            // -----------------------------------------------------------------------
+
+            // SG for the collector tasks - accepts OTLP from the Service Connect proxy (same SG)
+            // Service Connect routes via its Envoy proxy ENI-to-ENI within the ECS task SG
+            var collectorTaskSg = new SecurityGroup(this, "CollectorTaskSg", new SecurityGroupProps
+            {
+                Vpc = Vpc,
+                Description = "Allow OTLP from API tasks to collector",
+                AllowAllOutbound = true,
+            });
+            collectorTaskSg.AddIngressRule(
+                Peer.SecurityGroupId(EcsTasksSecurityGroup.SecurityGroupId),
+                Port.Tcp(4318),
+                "Allow OTLP HTTP from API tasks");
+
+            // CloudWatch Log Group for the collector container stdout/stderr
+            var collectorLogGroup = new LogGroup(this, "CollectorLogGroup", new LogGroupProps
+            {
+                LogGroupName = "/ecs/tinynote/collector",
+                Retention = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
+            });
+
+            // CloudWatch Log Group where the awsemf exporter writes EMF metric entries
+            // (auto-extracted by CloudWatch into the TinyNote metrics namespace)
+            var metricsLogGroup = new LogGroup(this, "MetricsLogGroup", new LogGroupProps
+            {
+                LogGroupName = "/aws/otel/tinynote-metrics",
+                Retention = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
+            });
+
+            // ADOT Collector task definition
+            var collectorTaskDef = new FargateTaskDefinition(this, "CollectorTaskDef", new FargateTaskDefinitionProps
+            {
+                Cpu = 256,
+                MemoryLimitMiB = 512,
+                RuntimePlatform = new RuntimePlatform
+                {
+                    CpuArchitecture = CpuArchitecture.X86_64,
+                    OperatingSystemFamily = OperatingSystemFamily.LINUX,
+                },
+            });
+
+            // Allow the collector task role to write EMF entries to CloudWatch Logs
+            collectorTaskDef.TaskRole.AddManagedPolicy(
+                ManagedPolicy.FromAwsManagedPolicyName("CloudWatchAgentServerPolicy"));
+
+            // Allow the execution role to pull the ADOT image from ECR Public (public.ecr.aws).
+            // Fargate requires ecr-public:GetAuthorizationToken even for anonymous pulls.
+            collectorTaskDef.ObtainExecutionRole().AddManagedPolicy(
+                ManagedPolicy.FromAwsManagedPolicyName("AmazonElasticContainerRegistryPublicReadOnly"));
+
+            // ADOT Collector config:
+            //   - Receives OTLP HTTP on 4318
+            //   - Exports metrics via awsemf (EMF JSON → CloudWatch Metrics namespace "TinyNote")
+            //   - health_check extension provides a readiness endpoint on 13133
+            var adotConfig = """
+                extensions:
+                  health_check:
+                    endpoint: 0.0.0.0:13133
+                receivers:
+                  otlp:
+                    protocols:
+                      http:
+                        endpoint: 0.0.0.0:4318
+                processors:
+                  batch:
+                    timeout: 10s
+                exporters:
+                  awsemf:
+                    namespace: TinyNote
+                    log_group_name: /aws/otel/tinynote-metrics
+                service:
+                  extensions: [health_check]
+                  pipelines:
+                    metrics:
+                      receivers: [otlp]
+                      processors: [batch]
+                      exporters: [awsemf]
+                """;
+
+            collectorTaskDef.AddContainer("collector", new ContainerDefinitionOptions
+            {
+                Image = ContainerImage.FromRegistry("public.ecr.aws/aws-observability/aws-otel-collector:latest"),
+                PortMappings = new[]
+                {
+                    new PortMapping { ContainerPort = 4318, Name = "otlp-http" },
+                },
+                Logging = LogDriver.AwsLogs(new AwsLogDriverProps
+                {
+                    LogGroup = collectorLogGroup,
+                    StreamPrefix = "collector",
+                    Mode = AwsLogDriverMode.NON_BLOCKING,
+                }),
+                Environment = new Dictionary<string, string>
+                {
+                    ["AOT_CONFIG_CONTENT"] = adotConfig,
+                    ["AWS_REGION"] = Region,
+                },
+            });
+
+            // Collector Fargate service - exposes itself via Service Connect as "collector:4318".
+            // The Service Connect proxy on API tasks routes http://collector:4318 to this service.
+            var collectorService = new FargateService(this, "CollectorService", new FargateServiceProps
+            {
+                Cluster = cluster,
+                TaskDefinition = collectorTaskDef,
+                DesiredCount = 1,
+                SecurityGroups = new[] { collectorTaskSg },
+                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
+                AssignPublicIp = false,
+                ServiceConnectConfiguration = new ServiceConnectProps
+                {
+                    Services = new[]
+                    {
+                        new ServiceConnectService
+                        {
+                            PortMappingName = "otlp-http",
+                            DnsName = "collector",
+                            Port = 4318,
+                        },
+                    },
+                },
+            });
+
+            // -----------------------------------------------------------------------
+            // Frontend and API services
+            // -----------------------------------------------------------------------
 
             // CloudWatch Log Group for Frontend - nginx access/error logs
             var frontendLogGroup = new LogGroup(this, "FrontendLogGroup", new LogGroupProps
@@ -110,7 +252,7 @@ namespace Cdk
                 RemovalPolicy = RemovalPolicy.DESTROY,
             });
 
-            // Step 6: Application Load Balancer (ALB) - created with FrontendService pattern
+            // Application Load Balancer (ALB) - created with FrontendService pattern
             // - Internet-facing ALB in public subnets
             // - Listener on port 80
             // - Path routing: /api* -> API, default -> Frontend
@@ -164,7 +306,7 @@ namespace Cdk
             var apiTaskDef = new FargateTaskDefinition(this, "ApiTaskDef", new FargateTaskDefinitionProps
             {
                 Cpu = 512,
-                MemoryLimitMiB = 2048,  // Increased from 512 MB for .NET runtime stability (avoids exit 139)
+                MemoryLimitMiB = 2048,  
                 RuntimePlatform = new RuntimePlatform
                 {
                     CpuArchitecture = CpuArchitecture.X86_64,
@@ -188,9 +330,13 @@ namespace Cdk
                     ["ASPNETCORE_URLS"] = "http://+:8080",
                     ["ConnectionStrings__DefaultConnection"] = connectionString,
                     ["Cors__AllowedOrigins"] = $"http://{frontendService.LoadBalancer.LoadBalancerDnsName}",
+                    // Service Connect proxy routes collector:4318 to the collector service
+                    ["OpenTelemetry__OtlpEndpoint"] = "http://collector:4318",
                 },
             });
 
+            // API service - Service Connect client mode enabled so the Envoy proxy is injected
+            // and routes outbound requests to "collector:4318" to the collector service.
             var apiService = new FargateService(this, "ApiService", new FargateServiceProps
             {
                 Cluster = cluster,
@@ -199,6 +345,10 @@ namespace Cdk
                 SecurityGroups = new[] { EcsTasksSecurityGroup },
                 VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
                 AssignPublicIp = false,
+                ServiceConnectConfiguration = new ServiceConnectProps
+                {
+                    Namespace = "tinynote.local",
+                },
             });
             apiService.AttachToApplicationTargetGroup(apiTargetGroup);
             Database.Connections.AllowDefaultPortFrom(apiService);
@@ -234,6 +384,12 @@ namespace Cdk
             {
                 Value = frontendLogGroup.LogGroupName,
                 Description = "CloudWatch Log Group for Frontend container (nginx logs)",
+            });
+
+            new CfnOutput(this, "MetricsLogGroupOutput", new CfnOutputProps
+            {
+                Value = metricsLogGroup.LogGroupName,
+                Description = "CloudWatch Log Group for OTEL EMF metrics",
             });
         }
     }
