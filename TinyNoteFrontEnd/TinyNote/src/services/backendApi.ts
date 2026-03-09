@@ -35,9 +35,9 @@ export const backendApi = createApi({
         { type: 'Note', id: `LIST-${userId}` },
       ],
     }),
-    updateNote: builder.mutation<Note, UpdateNoteRequest>({
-      query: (body) => ({
-        url: 'notes',
+    updateNote: builder.mutation<Note, { id: string } & UpdateNoteRequest>({
+      query: ({ id, ...body }) => ({
+        url: `notes/${id}`,
         method: 'PUT',
         body,
       }),

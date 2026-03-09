@@ -45,13 +45,13 @@ public class NotesService : INotesService
         return _mapper.Map<NoteResponse>(addedNote);
     }
 
-    public async Task<NoteResponse> UpdateNoteAsync(UpdateNoteRequest request, CancellationToken cancellationToken = default)
+    public async Task<NoteResponse> UpdateNoteAsync(Guid id, UpdateNoteRequest request, CancellationToken cancellationToken = default)
     {
-        var existingNote = await _noteRepository.GetNoteAsync(request.Id, cancellationToken);
+        var existingNote = await _noteRepository.GetNoteAsync(id, cancellationToken);
         if (existingNote == null)
         {
-            _logger.LogWarning("Failed to update note with Id {NoteId}. Note not found.", request.Id);
-            throw new ItemNotFoundException(request.Id);
+            _logger.LogWarning("Failed to update note with Id {NoteId}. Note not found.", id);
+            throw new ItemNotFoundException(id);
         }
         existingNote.Title = request.Title;
         existingNote.Content = request.Content;
@@ -59,7 +59,7 @@ public class NotesService : INotesService
         existingNote.UpdateAt = DateTimeOffset.UtcNow;
 
         var updatedNote = await _noteRepository.UpdateNoteAsync(existingNote, cancellationToken);
-        _logger.LogInformation("Note with Id {NoteId} updated successfully", request.Id);
+        _logger.LogInformation("Note with Id {NoteId} updated successfully", id);
 
         _metrics.NotesUpdated.Add(1);
 
@@ -83,16 +83,16 @@ public class NotesService : INotesService
         return _mapper.Map<List<NoteResponse>>(result);
     }
 
-    public async Task<bool> DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task DeleteNoteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        if (await _noteRepository.DeleteNoteAsync(id, cancellationToken))
+        if (!await _noteRepository.DeleteNoteAsync(id, cancellationToken))
         {
-            _logger.LogInformation("Note with Id {NoteId} deleted successfully", id);
-            _metrics.NotesDeleted.Add(1);
-            return true;
+            _logger.LogError("Failed to delete note with Id {NoteId}. Note not found.", id);
+            throw new ItemNotFoundException(id);
         }
-        _logger.LogWarning("Failed to delete note with Id {NoteId}. Note not found.", id);
-        return false;
+
+        _logger.LogInformation("Note with Id {NoteId} deleted successfully", id);
+        _metrics.NotesDeleted.Add(1);
     }
     private static string GetSummary(string content)
     {

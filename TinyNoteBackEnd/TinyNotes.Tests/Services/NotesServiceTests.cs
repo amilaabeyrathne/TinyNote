@@ -260,6 +260,7 @@ public class NotesServiceTests : IDisposable
 
         var act = async () => await _sut.AddNoteAsync(request);
 
+        // Exception must propagate; the NotesCreated counter must never be reached
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Database error");
 
@@ -345,13 +346,16 @@ public class NotesServiceTests : IDisposable
         capturedNote!.Summary.Should().BeEmpty();
     }
 
+    // -------------------------------------------------------------------------
+    // UpdateNoteAsync
+    // -------------------------------------------------------------------------
+
     [Fact]
     public async Task UpdateNoteAsync_WithValidRequest_ReturnsMappedNoteResponse()
     {
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Updated Title",
             Content = "Updated Content"
@@ -391,7 +395,7 @@ public class NotesServiceTests : IDisposable
             .Setup(m => m.Map<NoteResponse>(updatedNote))
             .Returns(expectedResponse);
 
-        var result = await _sut.UpdateNoteAsync(request);
+        var result = await _sut.UpdateNoteAsync(noteId, request);
 
         result.Should().BeEquivalentTo(expectedResponse);
     }
@@ -402,7 +406,6 @@ public class NotesServiceTests : IDisposable
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = "Content"
@@ -412,7 +415,7 @@ public class NotesServiceTests : IDisposable
             .Setup(r => r.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Note?)null);
 
-        var act = async () => await _sut.UpdateNoteAsync(request);
+        var act = async () => await _sut.UpdateNoteAsync(noteId, request);
 
         await act.Should().ThrowAsync<ItemNotFoundException>()
             .WithMessage($"*{noteId}*");
@@ -424,7 +427,6 @@ public class NotesServiceTests : IDisposable
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = "Content"
@@ -434,7 +436,7 @@ public class NotesServiceTests : IDisposable
             .Setup(r => r.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Note?)null);
 
-        await Assert.ThrowsAsync<ItemNotFoundException>(() => _sut.UpdateNoteAsync(request));
+        await Assert.ThrowsAsync<ItemNotFoundException>(() => _sut.UpdateNoteAsync(noteId, request));
 
         _noteRepositoryMock.Verify(
             r => r.UpdateNoteAsync(It.IsAny<Note>(), It.IsAny<CancellationToken>()),
@@ -447,7 +449,6 @@ public class NotesServiceTests : IDisposable
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "New Title",
             Content = "New Content"
@@ -476,7 +477,7 @@ public class NotesServiceTests : IDisposable
             .Setup(m => m.Map<NoteResponse>(It.IsAny<Note>()))
             .Returns(new NoteResponse());
 
-        await _sut.UpdateNoteAsync(request);
+        await _sut.UpdateNoteAsync(noteId, request);
 
         capturedNote.Should().NotBeNull();
         capturedNote!.Title.Should().Be(request.Title);
@@ -491,7 +492,6 @@ public class NotesServiceTests : IDisposable
         var longContent = new string('a', 60);
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = longContent
@@ -512,7 +512,7 @@ public class NotesServiceTests : IDisposable
             .Setup(m => m.Map<NoteResponse>(It.IsAny<Note>()))
             .Returns(new NoteResponse());
 
-        await _sut.UpdateNoteAsync(request);
+        await _sut.UpdateNoteAsync(noteId, request);
 
         capturedNote!.Summary.Should().Be(new string('a', 50) + "...");
     }
@@ -524,7 +524,6 @@ public class NotesServiceTests : IDisposable
         var shortContent = "Short content";
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = shortContent
@@ -545,7 +544,7 @@ public class NotesServiceTests : IDisposable
             .Setup(m => m.Map<NoteResponse>(It.IsAny<Note>()))
             .Returns(new NoteResponse());
 
-        await _sut.UpdateNoteAsync(request);
+        await _sut.UpdateNoteAsync(noteId, request);
 
         capturedNote!.Summary.Should().Be(shortContent);
     }
@@ -557,7 +556,6 @@ public class NotesServiceTests : IDisposable
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = "Content"
@@ -578,7 +576,7 @@ public class NotesServiceTests : IDisposable
             .Setup(m => m.Map<NoteResponse>(It.IsAny<Note>()))
             .Returns(new NoteResponse());
 
-        await _sut.UpdateNoteAsync(request, token);
+        await _sut.UpdateNoteAsync(noteId, request, token);
 
         _noteRepositoryMock.Verify(r => r.GetNoteAsync(noteId, token), Times.Once);
         _noteRepositoryMock.Verify(r => r.UpdateNoteAsync(It.IsAny<Note>(), token), Times.Once);
@@ -590,7 +588,6 @@ public class NotesServiceTests : IDisposable
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = "Content"
@@ -611,7 +608,7 @@ public class NotesServiceTests : IDisposable
                 return new Note();
             });
 
-        var act = async () => await _sut.UpdateNoteAsync(request, cts.Token);
+        var act = async () => await _sut.UpdateNoteAsync(noteId, request, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -622,7 +619,6 @@ public class NotesServiceTests : IDisposable
         var noteId = Guid.NewGuid();
         var request = new UpdateNoteRequest
         {
-            Id = noteId,
             UserId = Guid.NewGuid(),
             Title = "Title",
             Content = "Content"
@@ -636,7 +632,7 @@ public class NotesServiceTests : IDisposable
             .Setup(r => r.UpdateNoteAsync(It.IsAny<Note>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Database error"));
 
-        var act = async () => await _sut.UpdateNoteAsync(request);
+        var act = async () => await _sut.UpdateNoteAsync(noteId, request);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Database error");
@@ -645,6 +641,10 @@ public class NotesServiceTests : IDisposable
             r => r.UpdateNoteAsync(It.IsAny<Note>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
+
+    // -------------------------------------------------------------------------
+    // GetNotesAsync
+    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task GetNotesAsync_RepositoryReturnsEmptyList_ReturnsEmptyListNotNull()
@@ -799,6 +799,10 @@ public class NotesServiceTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // -------------------------------------------------------------------------
+    // GetNoteAsync
+    // -------------------------------------------------------------------------
+
     [Fact]
     public async Task GetNoteAsync_NoteExists_ReturnsMappedNoteResponse()
     {
@@ -885,6 +889,10 @@ public class NotesServiceTests : IDisposable
         _mapperMock.Verify(m => m.Map<NoteResponse>(It.IsAny<Note>()), Times.Never);
     }
 
+    // -------------------------------------------------------------------------
+    // DeleteNoteAsync
+    // -------------------------------------------------------------------------
+
     [Fact]
     public async Task DeleteNoteAsync_NoteExists_CompletesSuccessfully()
     {
@@ -910,6 +918,38 @@ public class NotesServiceTests : IDisposable
 
         await _sut.DeleteNoteAsync(noteId);
 
+        _noteRepositoryMock.Verify(
+            r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteNoteAsync_NoteNotFound_ThrowsItemNotFoundException()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var act = async () => await _sut.DeleteNoteAsync(noteId);
+
+        await act.Should().ThrowAsync<ItemNotFoundException>()
+            .WithMessage($"*{noteId}*");
+    }
+
+    [Fact]
+    public async Task DeleteNoteAsync_NoteNotFound_MetricsNotIncremented()
+    {
+        var noteId = Guid.NewGuid();
+
+        _noteRepositoryMock
+            .Setup(r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        await Assert.ThrowsAsync<ItemNotFoundException>(() => _sut.DeleteNoteAsync(noteId));
+
+        // Verify the repository was only called once and no further processing happened
         _noteRepositoryMock.Verify(
             r => r.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()),
             Times.Once);

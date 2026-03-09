@@ -1,4 +1,3 @@
-using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
 using TinyNote.Api.DTOs;
 using TinyNote.Api.Services;
@@ -10,20 +9,18 @@ namespace TinyNote.Api.Controllers
     public class NotesController : ControllerBase
     {
         private readonly INotesService _notesService;
-        private readonly IMapper _mapper;
 
-        public NotesController(INotesService notesService, IMapper mapper)
+        public NotesController(INotesService notesService)
         {
             _notesService = notesService;
-            _mapper = mapper;
         }
 
         [HttpPost]
-        [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status201Created)]
         public async Task<IActionResult> AddNote([FromBody] CreateNoteRequest request, CancellationToken cancellationToken = default)
         {
             var response = await _notesService.AddNoteAsync(request, cancellationToken);
-            return Ok(response);
+            return CreatedAtAction(nameof(GetNote), new { id = response.Id }, response);
         }
 
         [HttpGet("{id:guid}")]
@@ -51,18 +48,16 @@ namespace TinyNote.Api.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteNote(Guid id, CancellationToken cancellationToken = default)
         {
-            var isDeleted = await _notesService.DeleteNoteAsync(id, cancellationToken);
-            if (!isDeleted)
-                return NotFound();
+            await _notesService.DeleteNoteAsync(id, cancellationToken);
             return NoContent();
         }
 
-        [HttpPut]
+        [HttpPut("{id:guid}")]
         [ProducesResponseType(typeof(NoteResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> UpdateNote([FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> UpdateNote(Guid id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken = default)
         {
-            var response = await _notesService.UpdateNoteAsync(request, cancellationToken);
+            var response = await _notesService.UpdateNoteAsync(id, request, cancellationToken);
             return Ok(response);
         }
     }

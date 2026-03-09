@@ -62,8 +62,8 @@ public class NoteRepository : INoteRepository
                 );
         }
 
-        var sortByLower = sortBy?.ToLowerInvariant();
-        var isAscending = sortOrder?.ToLowerInvariant() == "asc";
+        var sortByLower = sortBy.ToLowerInvariant();
+        var isAscending = sortOrder.ToLowerInvariant() == "asc";
 
         switch ((sortByLower, isAscending))
         {
@@ -74,10 +74,10 @@ public class NoteRepository : INoteRepository
                 dbQuery = dbQuery.OrderByDescending(n => n.Title);
                 break;
             case (_, true):
-                dbQuery = dbQuery.OrderBy(n => n.UpdateAt);
+                dbQuery = dbQuery.OrderBy(n => n.CreatedAt);
                 break;
             default:
-                dbQuery = dbQuery.OrderByDescending(n => n.UpdateAt);
+                dbQuery = dbQuery.OrderByDescending(n => n.CreatedAt);
                 break;
         }
 

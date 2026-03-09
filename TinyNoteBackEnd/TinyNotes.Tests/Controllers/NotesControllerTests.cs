@@ -12,21 +12,19 @@ namespace TinyNote.Tests.Controllers;
 public class NotesControllerTests
 {
     private readonly Mock<INotesService> _notesServiceMock;
-    private readonly Mock<IMapper> _mapperMock;
     private readonly NotesController _sut;
 
     public NotesControllerTests()
     {
         _notesServiceMock = new Mock<INotesService>();
-        _mapperMock = new Mock<IMapper>();
-        _sut = new NotesController(_notesServiceMock.Object, _mapperMock.Object);
+        _sut = new NotesController(_notesServiceMock.Object);
     }
 
     [Fact]
     public async Task GetNote_NoteExists_Returns200OkWithNoteResponse()
     {
         var noteId = Guid.NewGuid();
-        var noteResponse = new NoteResponse { Id = noteId, Title = "Title", Content = "Content" };
+        var noteResponse = new NoteResponse { Id = noteId, Title = "Title" };
 
         _notesServiceMock
             .Setup(s => s.GetNoteAsync(noteId, It.IsAny<CancellationToken>()))
@@ -76,7 +74,7 @@ public class NotesControllerTests
 
         _notesServiceMock
             .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .Returns(Task.CompletedTask);
 
         var result = await _sut.DeleteNote(noteId);
 
@@ -90,7 +88,7 @@ public class NotesControllerTests
         var noteId = Guid.NewGuid();
 
         _notesServiceMock
-            .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         await _sut.DeleteNote(noteId);
 
@@ -106,7 +104,7 @@ public class NotesControllerTests
 
         _notesServiceMock
             .Setup(s => s.DeleteNoteAsync(noteId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .Returns(Task.CompletedTask);
 
         var result = await _sut.DeleteNote(noteId);
 

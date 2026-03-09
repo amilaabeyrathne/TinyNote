@@ -5,9 +5,6 @@ namespace TinyNote.Api.DTOs
     public class UpdateNoteRequest
     {
         [Required]
-        public Guid Id { get; set; }
-
-        [Required]
         public Guid UserId { get; set; }
 
         [Required]
