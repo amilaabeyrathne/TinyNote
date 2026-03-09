@@ -110,7 +110,6 @@ public class NotesControllerTests
 
         var result = await _sut.DeleteNote(noteId);
 
-        // 204 must carry no response body
         result.Should().BeOfType<NoContentResult>();
         result.Should().NotBeOfType<ObjectResult>();
     }

@@ -260,7 +260,6 @@ public class NotesServiceTests : IDisposable
 
         var act = async () => await _sut.AddNoteAsync(request);
 
-        // Exception must propagate; the NotesCreated counter must never be reached
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Database error");
 
@@ -345,10 +344,6 @@ public class NotesServiceTests : IDisposable
 
         capturedNote!.Summary.Should().BeEmpty();
     }
-
-    // -------------------------------------------------------------------------
-    // UpdateNoteAsync
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task UpdateNoteAsync_WithValidRequest_ReturnsMappedNoteResponse()
@@ -651,10 +646,6 @@ public class NotesServiceTests : IDisposable
             Times.Once);
     }
 
-    // -------------------------------------------------------------------------
-    // GetNotesAsync
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task GetNotesAsync_RepositoryReturnsEmptyList_ReturnsEmptyListNotNull()
     {
@@ -808,10 +799,6 @@ public class NotesServiceTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // -------------------------------------------------------------------------
-    // GetNoteAsync
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task GetNoteAsync_NoteExists_ReturnsMappedNoteResponse()
     {
@@ -897,10 +884,6 @@ public class NotesServiceTests : IDisposable
 
         _mapperMock.Verify(m => m.Map<NoteResponse>(It.IsAny<Note>()), Times.Never);
     }
-
-    // -------------------------------------------------------------------------
-    // DeleteNoteAsync
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task DeleteNoteAsync_NoteExists_CompletesSuccessfully()
