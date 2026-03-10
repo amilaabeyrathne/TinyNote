@@ -139,7 +139,7 @@ The CDK stack provisions all required AWS resources in a single `cdk deploy`.
 - **ECS Fargate cluster** – `tinynote-cluster` with a private Cloud Map namespace (`tinynote.local`)
 - **Frontend service** – Fargate task behind an internet-facing ALB; serves the React app on port 80
 - **API service** – Fargate task; ALB routes `/api*` here on port 8080
-- **ADOT Collector** – Receives OTLP metrics from the API and exports to CloudWatch via EMF
+- **ADOT Collector** – Receives OTLP metrics from the API and exports to CloudWatch
 - **CloudWatch Log Groups** – `/ecs/tinynote/api`, `/ecs/tinynote/frontend`, `/ecs/tinynote/collector`, `/aws/otel/tinynote-metrics`
 
 ### Deploy to AWS
