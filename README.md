@@ -5,16 +5,16 @@ A full-stack note-taking application built with a React/TypeScript frontend, an 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────     ┐
-│                   AWS (CDK / ECS Fargate)                │
-│                                                          │
-│  Internet → ALB (port 80)                                │
-│               ├── /api*  → API Service (port 8080)       │
-│               └── /*     → Frontend Service (nginx)      │
-│                                                          │
-│  API ──────────────────────→ RDS PostgreSQL 16           │
+┌─────────────────────────────────────────────────────┐
+│                   AWS (CDK / ECS Fargate)            │
+│                                                     │
+│  Internet → ALB (port 80)                           │
+│               ├── /api*  → API Service (port 8080)  │
+│               └── /*     → Frontend Service (nginx) │
+│                                                     │
+│  API ──────────────────────→ RDS PostgreSQL 16      │
 │  API ──────────────────────→ ADOT Collector → CloudWatch │
-└─────────────────────────────────────────────────────     ┘
+└─────────────────────────────────────────────────────┘
 ```
 
 | Layer | Technology |
@@ -200,7 +200,9 @@ Serilog is configured via `appsettings.json`. Structured logs are written to the
 
 ## Observability
 
-The API exports custom OpenTelemetry metrics (defined in `TinyNote.Api/Metrics/TinyNoteMetrics.cs`) alongside standard ASP.NET Core and .NET runtime metrics. In AWS, the ADOT Collector sidecar service receives these over OTLP HTTP (`collector.tinynote.local:4318`) and writes them to the `/aws/otel/tinynote-metrics` CloudWatch log group using the EMF format, making them queryable as CloudWatch metrics under the `TinyNote` namespace.
+The API exports custom OpenTelemetry metrics (defined in `TinyNote.Api/Metrics/TinyNoteMetrics.cs`) alongside standard ASP.NET Core and .NET runtime metrics. In AWS, the ADOT Collector sidecar service receives these over OTLP HTTP (`collector.tinynote.local:4318`) and writes them to the `/aws/otel/tinynote-metrics` CloudWatch log group using the EMF format, making them queryable as CloudWatch metrics under the `TinyNote` namespace. Metrics only, there is no tracing added up to this point.
+
+
 
 ## Assumptions
 
@@ -228,7 +230,7 @@ The following assumptions were made during the design and implementation of this
 - All ECS services run on `linux/amd64` Fargate to match the Docker images built locally on Windows via `--platform linux/amd64`.
 - The RDS instance uses `RemovalPolicy.DESTROY`, meaning a `cdk destroy` will permanently delete the database and all data.
 - Desired task counts are set to 1 for all services (frontend, API, collector) to minimise cost. Scale these up before any production use.
-- Open telemetry implementation is demonstration purpose only. Needs to improve for the production 
+- Open telemetry implementation is demonstration purpose only. Needs to improve for the production. 
 
 **Health checks**
 - The API has no dedicated health-check endpoint (e.g. `/health` or `/healthz`). The ALB reuses `GET /api/notes` as a liveness probe, accepting `HTTP 200` (valid request) and `HTTP 400` (missing `userId` parameter) as healthy status codes. This is intentional to avoid adding infrastructure purely for health checking, given the small scope of the project. A proper `/health` endpoint backed by ASP.NET Core's `IHealthCheck` mechanism would be the recommended approach before production use.
