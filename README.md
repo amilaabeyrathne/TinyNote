@@ -215,7 +215,7 @@ The following assumptions were made during the design and implementation of this
 **Data model**
 - Each note belongs to exactly one user and is identified by a server-generated GUID.
 - A `summary` field is auto-generated server-side by truncating `content` to the first 50 characters. Clients do not supply a summary.
-- Notes are soft-deleted by removal from the database; there is no archive or recycle-bin concept.
+- Notes are deleted by removal from the database; there is no archive or recycle-bin concept.
 
 **Search**
 - Full-text search is implemented using PostgreSQL `ILIKE` (case-insensitive pattern matching) across `title`, `content`, and `summary`. This is sufficient for small-to-medium datasets; a dedicated search index (e.g. pg_trgm, Elasticsearch) would be needed at scale.
